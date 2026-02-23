@@ -2,6 +2,10 @@
 
 BetterHelperjs — полноценный full-stack TypeScript фреймворк со своим JSX runtime, file-based router, nested layouts, loaders и SSR от Rigby Foundation.
 
+## Attribution
+
+Изначальная идея и база: [`newHelper-js`](https://github.com/MIOBOMB/newHelper-js/) от MIOBOMB.
+
 ## Root scripts
 
 ```bash
