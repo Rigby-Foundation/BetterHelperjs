@@ -5,18 +5,26 @@ import {
   type RouteComponent,
   type RouteContext,
   type RouteDefinition,
+  type RouteErrorBoundary,
   type RouteLoader,
   type Router,
 } from './index.js';
 
 export interface FileRouteMeta {
   title?: string;
+  errorTitle?: string;
 }
 
 export interface FileRouteModule<State = unknown> {
   default: RouteComponent<State>;
   meta?: FileRouteMeta;
   loader?: RouteLoader<State>;
+  errorBoundary?: RouteErrorBoundary<State>;
+}
+
+export interface FileErrorModule<State = unknown> {
+  default: RouteErrorBoundary<State>;
+  meta?: FileRouteMeta;
 }
 
 export interface FileLayoutProps<State = unknown> {
@@ -30,20 +38,24 @@ export interface FileLayoutModule<State = unknown> {
   default: FileLayoutComponent<State>;
 }
 
-export type FileSystemModule<State = unknown> = FileRouteModule<State> | FileLayoutModule<State>;
+export type FileSystemModule<State = unknown> = FileRouteModule<State> | FileLayoutModule<State> | FileErrorModule<State>;
 
 export interface FileRoutesBuildOptions<State = unknown> {
   pagesRoot?: string;
   notFoundFile?: string;
   notFoundTitle?: string;
+  errorFile?: string;
+  errorTitle?: string;
   titleFromPath?: (path: string) => string;
-  routerOptions?: Omit<CreateRouterOptions<State>, 'notFound' | 'notFoundTitle'>;
+  routerOptions?: Omit<CreateRouterOptions<State>, 'notFound' | 'notFoundTitle' | 'errorBoundary' | 'errorTitle'>;
 }
 
 export interface FileRoutesBuildResult<State = unknown> {
   routes: RouteDefinition<State>[];
   notFound?: RouteComponent<State>;
   notFoundTitle: string;
+  errorBoundary?: RouteErrorBoundary<State>;
+  errorTitle: string;
 }
 
 export function filePathToRoutePath(file: string, pagesRoot = './pages'): string {
@@ -163,17 +175,59 @@ function composeWithLayouts<State>(
   };
 }
 
+function composeErrorBoundaryWithLayouts<State>(
+  errorBoundary: RouteErrorBoundary<State>,
+  layouts: FileLayoutComponent<State>[]
+): RouteErrorBoundary<State> {
+  if (layouts.length === 0) {
+    return errorBoundary;
+  }
+
+  return (ctx) => {
+    let node = errorBoundary(ctx);
+
+    for (let index = layouts.length - 1; index >= 0; index -= 1) {
+      node = layouts[index]({
+        children: node,
+        ctx,
+      });
+    }
+
+    return node;
+  };
+}
+
+function resolveFirstExistingFile<State>(
+  pages: Record<string, FileSystemModule<State>>,
+  candidates: string[]
+): string | undefined {
+  for (const candidate of candidates) {
+    if (candidate in pages) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
 export function createFileRoutes<State = unknown>(
   pages: Record<string, FileSystemModule<State>>,
   options: FileRoutesBuildOptions<State> = {}
 ): FileRoutesBuildResult<State> {
   const pagesRoot = options.pagesRoot ?? './pages';
-  const notFoundFile = options.notFoundFile ?? `${pagesRoot}/404.tsx`;
+  const notFoundFile = options.notFoundFile
+    ?? resolveFirstExistingFile(pages, [`${pagesRoot}/not-found.tsx`, `${pagesRoot}/404.tsx`])
+    ?? `${pagesRoot}/404.tsx`;
+  const errorFile = options.errorFile
+    ?? resolveFirstExistingFile(pages, [`${pagesRoot}/error.tsx`])
+    ?? `${pagesRoot}/error.tsx`;
   const titleResolver = options.titleFromPath ?? defaultTitleFromPath;
 
   const pagesMap = { ...pages };
   const notFoundModule = pagesMap[notFoundFile] as FileRouteModule<State> | undefined;
+  const errorModule = pagesMap[errorFile] as FileErrorModule<State> | undefined;
   delete pagesMap[notFoundFile];
+  delete pagesMap[errorFile];
 
   const routes = Object.keys(pagesMap)
     .filter((file) => !isLayoutFile(file))
@@ -189,6 +243,9 @@ export function createFileRoutes<State = unknown>(
         title: mod.meta?.title ?? titleResolver(path),
         component: composeWithLayouts(mod.default, layouts),
         loader: mod.loader,
+        errorBoundary: mod.errorBoundary
+          ? composeErrorBoundaryWithLayouts(mod.errorBoundary, layouts)
+          : undefined,
       };
     })
     .filter((route): route is RouteDefinition<State> => route !== null)
@@ -200,10 +257,18 @@ export function createFileRoutes<State = unknown>(
     notFound = composeWithLayouts(notFoundModule.default, layouts);
   }
 
+  let errorBoundary: RouteErrorBoundary<State> | undefined;
+  if (typeof errorModule?.default === 'function') {
+    const layouts = resolveLayoutChain(pages, errorFile, pagesRoot);
+    errorBoundary = composeErrorBoundaryWithLayouts(errorModule.default, layouts);
+  }
+
   return {
     routes,
     notFound,
     notFoundTitle: notFoundModule?.meta?.title ?? options.notFoundTitle ?? '404',
+    errorBoundary,
+    errorTitle: errorModule?.meta?.errorTitle ?? errorModule?.meta?.title ?? options.errorTitle ?? 'Error',
   };
 }
 
@@ -217,5 +282,7 @@ export function createFileRouter<State = unknown>(
     ...options.routerOptions,
     notFound: built.notFound,
     notFoundTitle: built.notFoundTitle,
+    errorBoundary: built.errorBoundary,
+    errorTitle: built.errorTitle,
   });
 }

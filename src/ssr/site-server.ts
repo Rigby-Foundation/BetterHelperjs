@@ -5,12 +5,20 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { serializeState, type CounterRenderState } from '../core/state.js';
+import { createHtmlChunkStream, streamToNodeResponse } from './stream.js';
+
+type HydrationMode = 'full' | 'islands' | 'none';
 
 interface RenderResult {
   html: string;
   head: string;
   status: number;
-  state: CounterRenderState;
+  state?: CounterRenderState;
+  hydrationMode?: HydrationMode;
+  stateKey?: string;
+  statePayload?: string;
+  islandsKey?: string;
+  islandsPayloadJson?: string;
 }
 
 interface SiteModule {
@@ -45,14 +53,48 @@ export interface ConventionSiteServerOptions {
   viteConfigFile?: string;
   clientDistDir?: string;
   serverDistDir?: string;
+  streaming?: boolean;
 }
 
-function applyTemplate(template: string, rendered: RenderResult, scripts: string): string {
-  return template
+function resolveHydrationMode(rendered: RenderResult): HydrationMode {
+  return rendered.hydrationMode ?? 'full';
+}
+
+function resolveStatePayload(rendered: RenderResult): string {
+  if (typeof rendered.statePayload === 'string') {
+    return rendered.statePayload;
+  }
+
+  if (rendered.state) {
+    return serializeState(rendered.state);
+  }
+
+  return 'null';
+}
+
+function resolveBootstrapScripts(rendered: RenderResult): string {
+  if (resolveHydrationMode(rendered) !== 'islands') {
+    return '';
+  }
+
+  const islandsKey = rendered.islandsKey ?? '__BH_ISLANDS__';
+  const islandsPayload = rendered.islandsPayloadJson ?? '[]';
+  return `<script>window[${JSON.stringify(islandsKey)}]=${islandsPayload}</script>`;
+}
+
+function applyTemplate(template: string, rendered: RenderResult, scripts: string, clientScript: string): string {
+  const stateAssignmentPattern = /window\.__SITE_STATE__\s*=\s*<!--app-state-->/;
+  const stateKey = rendered.stateKey;
+  const normalizedTemplate = stateKey && stateAssignmentPattern.test(template)
+    ? template.replace(stateAssignmentPattern, `window[${JSON.stringify(stateKey)}]=<!--app-state-->`)
+    : template;
+
+  return normalizedTemplate
     .replace('<!--app-head-->', `${rendered.head}\n${scripts}`)
     .replace('<!--app-html-->', rendered.html)
-    .replace('<!--app-state-->', serializeState(rendered.state))
-    .replace('<!--app-scripts-->', '');
+    .replace('<!--app-state-->', resolveStatePayload(rendered))
+    .replace('<!--app-bootstrap-->', resolveBootstrapScripts(rendered))
+    .replace('<!--app-scripts-->', clientScript);
 }
 
 function resolveManifestEntryKey(manifest: Manifest, preferred: string): string | null {
@@ -65,7 +107,7 @@ function resolveManifestEntryKey(manifest: Manifest, preferred: string): string 
   return null;
 }
 
-function createPreloadTags(manifest: Manifest, entry: string): string {
+function createPreloadTags(manifest: Manifest, entry: string, includeScript = true): string {
   const chunk = manifest[entry];
   if (!chunk) return '';
 
@@ -77,7 +119,9 @@ function createPreloadTags(manifest: Manifest, entry: string): string {
     }
   }
 
-  tags.push(`<script type="module" src="/${chunk.file}"></script>`);
+  if (includeScript) {
+    tags.push(`<script type="module" src="/${chunk.file}"></script>`);
+  }
   return tags.join('');
 }
 
@@ -173,7 +217,8 @@ async function importVite(): Promise<ViteModule> {
 async function loadProd(options: Required<ConventionSiteServerOptions>): Promise<{
   template: string;
   render: (url: string) => Promise<RenderResult>;
-  scripts: string;
+  manifest: Manifest;
+  entry: string | null;
 }> {
   const templatePath = path.resolve(options.root, options.templateFile);
   const manifestPath = path.resolve(options.root, options.clientDistDir, '.vite/manifest.json');
@@ -186,15 +231,14 @@ async function loadProd(options: Required<ConventionSiteServerOptions>): Promise
 
   const manifest = JSON.parse(manifestRaw) as Manifest;
   const entry = resolveManifestEntryKey(manifest, options.appModulePath.replace(/^\//, ''));
-  const scripts = entry ? createPreloadTags(manifest, entry) : '';
-
   const moduleUrl = pathToFileURL(serverEntryPath).href;
   const serverModule = (await import(moduleUrl)) as SiteModule;
 
   return {
     template,
     render: (url: string) => serverModule.site.render(url),
-    scripts,
+    manifest,
+    entry,
   };
 }
 
@@ -221,6 +265,7 @@ export async function createConventionSiteServer(options: ConventionSiteServerOp
     viteConfigFile: options.viteConfigFile ?? 'vite.config.ts',
     clientDistDir: options.clientDistDir ?? 'dist/client',
     serverDistDir: options.serverDistDir ?? 'dist/server',
+    streaming: options.streaming ?? true,
   };
 
   const isProd = process.env.NODE_ENV === 'production';
@@ -228,7 +273,8 @@ export async function createConventionSiteServer(options: ConventionSiteServerOp
   let vite: DevViteServer | undefined;
   let template = '';
   let render: ((url: string) => Promise<RenderResult>) | undefined;
-  let prodScripts = '';
+  let prodManifest: Manifest = {};
+  let prodEntry: string | null = null;
   let clientDistRoot = '';
 
   if (!isProd) {
@@ -243,7 +289,8 @@ export async function createConventionSiteServer(options: ConventionSiteServerOp
     const loaded = await loadProd(normalized);
     template = loaded.template;
     render = loaded.render;
-    prodScripts = loaded.scripts;
+    prodManifest = loaded.manifest;
+    prodEntry = loaded.entry;
     clientDistRoot = path.resolve(normalized.root, normalized.clientDistDir);
   }
 
@@ -267,12 +314,27 @@ export async function createConventionSiteServer(options: ConventionSiteServerOp
 
         const templatePath = path.resolve(normalized.root, normalized.templateFile);
         let devTemplate = await readFile(templatePath, 'utf8');
-        devTemplate = devTemplate.replace('<!--app-scripts-->', `<script type="module" src="${normalized.appModulePath}"></script>`);
         devTemplate = await vite.transformIndexHtml(url, devTemplate);
 
         const module = (await vite.ssrLoadModule(normalized.appModulePath)) as SiteModule;
         const rendered = await module.site.render(url);
-        const html = applyTemplate(devTemplate, rendered, '');
+        const hydrationMode = resolveHydrationMode(rendered);
+        const clientScript = hydrationMode === 'none'
+          ? ''
+          : `<script type="module" src="${normalized.appModulePath}"></script>`;
+        const html = applyTemplate(devTemplate, rendered, '', clientScript);
+
+        if (method === 'HEAD') {
+          response.statusCode = rendered.status;
+          response.setHeader('Content-Type', 'text/html; charset=utf-8');
+          response.end();
+          return;
+        }
+
+        if (normalized.streaming) {
+          await streamToNodeResponse(response, createHtmlChunkStream(html), rendered.status);
+          return;
+        }
 
         writeHtml(response, rendered.status, html);
         return;
@@ -287,7 +349,24 @@ export async function createConventionSiteServer(options: ConventionSiteServerOp
       }
 
       const rendered = await render!(url);
-      const html = applyTemplate(template, rendered, prodScripts);
+      const hydrationMode = resolveHydrationMode(rendered);
+      const prodScripts = prodEntry
+        ? createPreloadTags(prodManifest, prodEntry, hydrationMode !== 'none')
+        : '';
+      const html = applyTemplate(template, rendered, prodScripts, '');
+
+      if (method === 'HEAD') {
+        response.statusCode = rendered.status;
+        response.setHeader('Content-Type', 'text/html; charset=utf-8');
+        response.end();
+        return;
+      }
+
+      if (normalized.streaming) {
+        await streamToNodeResponse(response, createHtmlChunkStream(html), rendered.status);
+        return;
+      }
+
       writeHtml(response, rendered.status, html);
     } catch (error) {
       if (vite && error instanceof Error) {

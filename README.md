@@ -49,8 +49,22 @@ npm --prefix site run start
 
 - Nested layouts: `pages/layout.tsx`, `pages/docs/layout.tsx`, ...
 - Route loader: `export function loader(ctx) { ... }`, данные доступны как `ctx.data`
+- Error entities: `pages/error.tsx` (global), `export const errorBoundary = ...` (route-level)
+- Not Found entities: `pages/404.tsx` или `pages/not-found.tsx`
+- `notFound()` helper для loader/component сценариев
 - SPA links: `<Link href=\"/route\" />` из `better-helperjs/router`
 - Dev SSR server (`better-helperjs/ssr/site-server`) требует `vite` в проекте приложения.
+
+### SSR modes
+
+- `hydrateMode: 'full'` — стандартная hydration всего приложения
+- `hydrateMode: 'none'` — no-hydration SSR (чистый HTML без клиентского entry)
+- `hydrateMode: 'islands'` — частичная hydration через islands (`defineIsland`, `hydrateIslands`)
+- SSR streaming helpers: `renderWithRouterStream`, `createHtmlChunkStream`, `streamToNodeResponse`
+
+## Legacy Browser Build
+
+После `npm run build` дополнительно собирается `dist/vite/better-helper.iife.js` (target: `es2015`), чтобы подключать фреймворк в старых браузерах через обычный `<script>`.
 
 ## Legacy API (Deprecated)
 

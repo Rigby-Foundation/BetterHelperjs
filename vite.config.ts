@@ -15,10 +15,11 @@ export default defineConfig({
     jsxImportSource: 'better-helperjs',
   },
   build: {
+    target: 'es2015',
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
       name: 'BetterHelper',
-      formats: ['es', 'umd'],
+      formats: ['es', 'umd', 'iife'],
       fileName: (format) => `better-helper.${format}.js`,
     },
     outDir: 'dist/vite',

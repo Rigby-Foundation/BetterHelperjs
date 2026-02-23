@@ -56,9 +56,10 @@
   },
   "scripts": {
     "prepack": "npm run clean && npm run build",
-    "build": "npm run build:ts && npm run build:vite",
+    "build": "npm run build:ts && npm run build:vite && npm run build:size",
     "build:ts": "tsc -p tsconfig.json",
     "build:vite": "vite build",
+    "build:size": "node scripts/bundle-size.mjs",
     "dev": "npm --prefix site run dev",
     "dev:site": "npm --prefix site run dev",
     "build:site": "npm --prefix site run build",

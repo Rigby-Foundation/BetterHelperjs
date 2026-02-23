@@ -1,6 +1,6 @@
 import { mount, renderToString } from '../jsx/index.js';
 import type { VNodeChild } from '../jsx/jsx-runtime.js';
-import type { Router } from '../router/index.js';
+import { NotFoundError, type Router } from '../router/index.js';
 
 export interface ShellRenderProps<State> {
   state: State;
@@ -22,6 +22,8 @@ export interface RenderWithRouterOptions<State> {
   titlePrefix?: string;
   defaultTitle?: string;
   data?: unknown;
+  forceNotFound?: boolean;
+  error?: unknown;
 }
 
 export interface RenderWithRouterResult {
@@ -30,6 +32,7 @@ export interface RenderWithRouterResult {
   title: string;
   routeTitle: string;
   data: unknown;
+  error?: unknown;
 }
 
 function resolvePageTitle(routeTitle: string, titlePrefix?: string, defaultTitle = 'Untitled'): string {
@@ -41,6 +44,8 @@ function resolvePageTitle(routeTitle: string, titlePrefix?: string, defaultTitle
 export function renderWithRouter<State>(options: RenderWithRouterOptions<State>): RenderWithRouterResult {
   const route = options.router.render(options.url, options.state, {
     data: options.data,
+    forceNotFound: options.forceNotFound,
+    error: options.error,
   });
   const routeTitle = route.title || options.defaultTitle || 'Untitled';
   const title = resolvePageTitle(routeTitle, options.titlePrefix, options.defaultTitle);
@@ -62,7 +67,13 @@ export function renderWithRouter<State>(options: RenderWithRouterOptions<State>)
     title,
     routeTitle,
     data: route.data,
+    error: route.error,
   };
+}
+
+export async function* renderWithRouterStream<State>(options: RenderWithRouterOptions<State>): AsyncGenerator<string> {
+  const rendered = renderWithRouter(options);
+  yield rendered.html;
 }
 
 export interface MountWithRouterOptions<State> {
@@ -75,6 +86,7 @@ export interface MountWithRouterOptions<State> {
   getUrl?: (state: State) => string;
   setUrl?: (state: State, url: string) => State;
   loadData?: (url: string, state: State) => unknown | Promise<unknown>;
+  onError?: (error: unknown, context: { url: string; state: State }) => void;
 }
 
 export function mountWithRouter<State>(options: MountWithRouterOptions<State>): () => void {
@@ -99,8 +111,22 @@ export function mountWithRouter<State>(options: MountWithRouterOptions<State>): 
     const token = ++renderToken;
 
     const run = async (): Promise<void> => {
+      let forceNotFound = false;
+      let routeError: unknown = undefined;
+
       if (options.loadData && (forceDataLoad || routeDataUrl !== url)) {
-        routeData = await options.loadData(url, state);
+        try {
+          routeData = await options.loadData(url, state);
+        } catch (error) {
+          routeData = undefined;
+
+          if (error instanceof NotFoundError) {
+            forceNotFound = true;
+          } else {
+            routeError = error;
+          }
+        }
+
         routeDataUrl = url;
       }
 
@@ -108,9 +134,20 @@ export function mountWithRouter<State>(options: MountWithRouterOptions<State>): 
         return;
       }
 
-      const route = options.router.render(url, state, {
-        data: routeData,
-      });
+      let route: ReturnType<Router<State>['render']>;
+      try {
+        route = options.router.render(url, state, {
+          data: routeData,
+          forceNotFound,
+          error: routeError,
+        });
+      } catch (error) {
+        if (options.onError) {
+          options.onError(error, { url, state });
+          return;
+        }
+        throw error;
+      }
       const routeTitle = route.title || options.defaultTitle || 'Untitled';
       const title = resolvePageTitle(routeTitle, options.titlePrefix, options.defaultTitle);
 
@@ -134,7 +171,16 @@ export function mountWithRouter<State>(options: MountWithRouterOptions<State>): 
       document.title = title;
     };
 
-    void run();
+    void run().catch((error) => {
+      if (options.onError) {
+        options.onError(error, { url, state });
+        return;
+      }
+
+      queueMicrotask(() => {
+        throw error;
+      });
+    });
   };
 
   const stop = options.router.start((url) => {

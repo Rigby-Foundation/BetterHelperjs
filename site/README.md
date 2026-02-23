@@ -17,6 +17,7 @@ npm run start
 - `src/pages/about.tsx` -> `/about`
 - `src/pages/docs/[slug].tsx` -> `/docs/:slug`
 - `src/pages/404.tsx` -> fallback `404`
+- `src/pages/error.tsx` -> global error boundary entity
 - `src/pages/layout.tsx` -> root nested layout for all pages
 - `src/pages/docs/layout.tsx` -> nested layout for `/docs/*`
 
@@ -47,3 +48,11 @@ import { Link } from 'better-helperjs/router';
 - `src/pages/*` — сами страницы
 
 `entry-client.ts`, `entry-server.ts`, `router.ts`, `state.ts`, `types.ts` полностью вынесены в framework (`better-helperjs/ssr`, `better-helperjs/router/file-based`, `better-helperjs/core`).
+
+## SSR hydration modes
+
+В `defineCounterSite(...)` можно переключать:
+
+- `hydrateMode: 'full'` (default)
+- `hydrateMode: 'none'` (no-hydration SSR)
+- `hydrateMode: 'islands'` + `defineIsland(...)`

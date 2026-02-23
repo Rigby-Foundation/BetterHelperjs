@@ -13,12 +13,17 @@ export interface RouteContext<State = unknown> {
 
 export type RouteComponent<State = unknown> = (ctx: RouteContext<State>) => VNodeChild;
 export type RouteLoader<State = unknown> = (ctx: RouteContext<State>) => unknown | Promise<unknown>;
+export interface RouteErrorContext<State = unknown> extends RouteContext<State> {
+  error: unknown;
+}
+export type RouteErrorBoundary<State = unknown> = (ctx: RouteErrorContext<State>) => VNodeChild;
 
 export interface RouteDefinition<State = unknown> {
   path: string;
   component: RouteComponent<State>;
   title?: string;
   loader?: RouteLoader<State>;
+  errorBoundary?: RouteErrorBoundary<State>;
 }
 
 export interface MatchedRoute<State = unknown> {
@@ -35,11 +40,14 @@ export interface RouteRenderResult<State = unknown> {
   context: RouteContext<State>;
   node: VNodeChild;
   data: unknown;
+  error?: unknown;
 }
 
 export interface CreateRouterOptions<State = unknown> {
   notFound?: RouteComponent<State>;
   notFoundTitle?: string;
+  errorBoundary?: RouteErrorBoundary<State>;
+  errorTitle?: string;
 }
 
 interface CompiledRoute<State> {
@@ -59,6 +67,21 @@ export interface Router<State = unknown> {
 
 export interface RouteRenderOptions {
   data?: unknown;
+  forceNotFound?: boolean;
+  error?: unknown;
+}
+
+export class NotFoundError extends Error {
+  public readonly status = 404;
+
+  constructor(message = 'Not Found') {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
+export function notFound(message?: string): never {
+  throw new NotFoundError(message);
 }
 
 export interface LinkProps {
@@ -171,7 +194,7 @@ export function createRouter<State = unknown>(
 
   function render(input: string | URL, state: State, renderOptions: RouteRenderOptions = {}): RouteRenderResult<State> {
     const url = normalizeUrl(input);
-    const matched = resolve(url);
+    const matched = renderOptions.forceNotFound ? null : resolve(url);
 
     const context: RouteContext<State> = {
       url,
@@ -182,25 +205,63 @@ export function createRouter<State = unknown>(
       data: renderOptions.data,
     };
 
-    if (matched) {
-      return {
-        status: 200,
-        title: matched.route.title ?? '',
-        matched,
-        context,
-        node: matched.route.component(context),
-        data: renderOptions.data,
-      };
-    }
-
-    return {
+    const renderNotFound = (): RouteRenderResult<State> => ({
       status: 404,
       title: options.notFoundTitle ?? 'Not Found',
       matched: null,
       context,
       node: options.notFound ? options.notFound(context) : null,
       data: renderOptions.data,
+    });
+
+    const renderError = (error: unknown, routeMatch: MatchedRoute<State> | null): RouteRenderResult<State> => {
+      if (error instanceof NotFoundError) {
+        return renderNotFound();
+      }
+
+      const boundary = routeMatch?.route.errorBoundary ?? options.errorBoundary;
+      if (!boundary) {
+        throw error;
+      }
+
+      return {
+        status: 500,
+        title: options.errorTitle ?? 'Error',
+        matched: routeMatch,
+        context,
+        node: boundary({
+          ...context,
+          error,
+        }),
+        data: renderOptions.data,
+        error,
+      };
     };
+
+    if (renderOptions.forceNotFound) {
+      return renderNotFound();
+    }
+
+    if (renderOptions.error !== undefined) {
+      return renderError(renderOptions.error, matched);
+    }
+
+    if (matched) {
+      try {
+        return {
+          status: 200,
+          title: matched.route.title ?? '',
+          matched,
+          context,
+          node: matched.route.component(context),
+          data: renderOptions.data,
+        };
+      } catch (error) {
+        return renderError(error, matched);
+      }
+    }
+
+    return renderNotFound();
   }
 
   function notify(nextUrl: string): void {

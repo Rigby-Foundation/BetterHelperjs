@@ -24,16 +24,23 @@ describe('file-based router helpers', () => {
           default: () => 'nf',
           meta: { title: 'NF' },
         },
+        './pages/error.tsx': {
+          default: (ctx) => `error:${String((ctx.error as Error).message)}`,
+          meta: { title: 'ERR' },
+        },
       },
       {
         pagesRoot: './pages',
         notFoundFile: './pages/404.tsx',
+        errorFile: './pages/error.tsx',
       }
     );
 
     expect(routes.routes.map((route) => route.path)).toEqual(['/docs/:slug', '/']);
     expect(routes.notFoundTitle).toBe('NF');
     expect(routes.notFound).toBeTypeOf('function');
+    expect(routes.errorTitle).toBe('ERR');
+    expect(routes.errorBoundary).toBeTypeOf('function');
   });
 
   it('applies nested layouts and keeps route loaders', async () => {
@@ -49,15 +56,21 @@ describe('file-based router helpers', () => {
           default: (ctx) => `page:${ctx.params.slug}:${(ctx.data as { fromLoader: string }).fromLoader}`,
           loader: (ctx) => ({ fromLoader: ctx.params.slug ?? 'unknown' }),
           meta: { title: 'Docs' },
+          errorBoundary: (ctx) => `route-error:${String((ctx.error as Error).message)}`,
         },
         './pages/404.tsx': {
           default: () => 'nf',
           meta: { title: 'NF' },
         },
+        './pages/error.tsx': {
+          default: (ctx) => `global-error:${String((ctx.error as Error).message)}`,
+          meta: { title: 'ERR' },
+        },
       },
       {
         pagesRoot: './pages',
         notFoundFile: './pages/404.tsx',
+        errorFile: './pages/error.tsx',
       }
     );
 
@@ -73,5 +86,9 @@ describe('file-based router helpers', () => {
 
     const rendered = router.render('/docs/intro', { runtime: 'node' }, { data });
     expect(rendered.node).toBe('root(docs(page:intro:intro))');
+
+    const errored = router.render('/docs/intro', { runtime: 'node' }, { error: new Error('boom') });
+    expect(errored.status).toBe(500);
+    expect(errored.node).toBe('root(docs(route-error:boom))');
   });
 });
