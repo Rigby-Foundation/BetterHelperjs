@@ -1,6 +1,7 @@
 # BetterHelperjs Framework
 
 BetterHelperjs — полноценный full-stack TypeScript фреймворк со своим JSX runtime, file-based router, nested layouts, loaders и SSR от Rigby Foundation.
+Базовый пакет не тянет обязательные runtime-зависимости (prod deps = 0).
 
 ## Attribution
 
@@ -49,6 +50,7 @@ npm --prefix site run start
 - Nested layouts: `pages/layout.tsx`, `pages/docs/layout.tsx`, ...
 - Route loader: `export function loader(ctx) { ... }`, данные доступны как `ctx.data`
 - SPA links: `<Link href=\"/route\" />` из `better-helperjs/router`
+- Dev SSR server (`better-helperjs/ssr/site-server`) требует `vite` в проекте приложения.
 
 ## Legacy API (Deprecated)
 

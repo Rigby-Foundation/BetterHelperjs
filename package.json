@@ -1,6 +1,6 @@
 {
   "name": "better-helperjs",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Full-stack TypeScript framework with JSX runtime, file-based routing, and SSR for Node/Bun/Deno.",
   "author": "Rigby Foundation",
   "type": "module",
@@ -85,17 +85,21 @@
     "deno"
   ],
   "license": "LGPL-3.0-only",
-  "dependencies": {
-    "express": "^5.1.0",
+  "peerDependencies": {
     "vite": "^7.3.1"
   },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "@types/express": "^5.0.5",
     "@types/node": "^24.3.0",
     "concurrently": "^9.2.1",
     "jsdom": "^26.0.0",
     "tsx": "^4.20.5",
     "typescript": "^5.7.3",
+    "vite": "^7.3.1",
     "vitest": "^3.2.4"
   }
 }
