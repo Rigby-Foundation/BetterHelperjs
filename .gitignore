@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+site/node_modules/
+
+# Build artifacts
+dist/
+site/dist/
+*.tgz
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# System and editor files
+.DS_Store
+.idea/
+.vscode/

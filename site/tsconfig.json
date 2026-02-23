@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "better-helperjs",
+    "baseUrl": ".",
+    "paths": {
+      "better-helperjs": ["../src/index.ts"],
+      "better-helperjs/core": ["../src/core/index.ts"],
+      "better-helperjs/ssr": ["../src/ssr/index.ts"],
+      "better-helperjs/router": ["../src/router/index.ts"],
+      "better-helperjs/router/file-based": ["../src/router/file-based.ts"],
+      "better-helperjs/jsx": ["../src/jsx/index.ts"],
+      "better-helperjs/jsx-runtime": ["../src/jsx/jsx-runtime.ts"],
+      "better-helperjs/jsx-dev-runtime": ["../src/jsx/jsx-dev-runtime.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

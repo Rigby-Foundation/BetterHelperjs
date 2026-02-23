@@ -1,0 +1,101 @@
+{
+  "name": "better-helperjs",
+  "version": "3.0.0",
+  "description": "Full-stack TypeScript framework with JSX runtime, file-based routing, and SSR for Node/Bun/Deno.",
+  "author": "Rigby Foundation",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./router": {
+      "types": "./dist/router/index.d.ts",
+      "import": "./dist/router/index.js"
+    },
+    "./router/file-based": {
+      "types": "./dist/router/file-based.d.ts",
+      "import": "./dist/router/file-based.js"
+    },
+    "./jsx": {
+      "types": "./dist/jsx/index.d.ts",
+      "import": "./dist/jsx/index.js"
+    },
+    "./jsx-runtime": {
+      "types": "./dist/jsx/jsx-runtime.d.ts",
+      "import": "./dist/jsx/jsx-runtime.js"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./dist/jsx/jsx-dev-runtime.d.ts",
+      "import": "./dist/jsx/jsx-dev-runtime.js"
+    },
+    "./ssr": {
+      "types": "./dist/ssr/index.d.ts",
+      "import": "./dist/ssr/index.js"
+    },
+    "./ssr/site-server": {
+      "types": "./dist/ssr/site-server.d.ts",
+      "import": "./dist/ssr/site-server.js"
+    }
+  },
+  "scripts": {
+    "prepack": "npm run clean && npm run build",
+    "build": "npm run build:ts && npm run build:vite",
+    "build:ts": "tsc -p tsconfig.json",
+    "build:vite": "vite build",
+    "dev": "npm --prefix site run dev",
+    "dev:site": "npm --prefix site run dev",
+    "build:site": "npm --prefix site run build",
+    "start:site": "npm --prefix site run start",
+    "dev:api": "tsx src/server/index.ts",
+    "dev:api-full": "concurrently -k -n api,site -c cyan,green \"npm:dev:api\" \"npm:dev\"",
+    "start:api": "node dist/server/index.js",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "framework",
+    "fullstack",
+    "ssr",
+    "router",
+    "jsx",
+    "typescript-framework",
+    "typescript",
+    "bun",
+    "node",
+    "deno"
+  ],
+  "license": "LGPL-3.0-only",
+  "dependencies": {
+    "express": "^5.1.0",
+    "vite": "^7.3.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.3.0",
+    "concurrently": "^9.2.1",
+    "jsdom": "^26.0.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}
