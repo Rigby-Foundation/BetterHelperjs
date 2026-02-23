@@ -17,6 +17,20 @@ npm run build
 npm run dev         # запускает тестовый SSR сайт из ./site
 ```
 
+## CLI
+
+Создать новый Vite + SSR проект:
+
+```bash
+npx better-helperjs create my-app
+```
+
+Опции:
+
+- `--pm npm|pnpm|yarn|bun`
+- `--no-install`
+- `--force`
+
 ## Тестовый сайт
 
 Тестовый SSR сайт теперь отдельным пакетом: `site/package.json`.
