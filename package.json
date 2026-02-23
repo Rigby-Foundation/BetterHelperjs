@@ -1,6 +1,6 @@
 {
   "name": "better-helperjs",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Full-stack TypeScript framework with JSX runtime, file-based routing, and SSR for Node/Bun/Deno.",
   "author": "Rigby Foundation",
   "type": "module",
