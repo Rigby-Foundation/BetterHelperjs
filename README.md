@@ -1,11 +1,11 @@
 # BetterHelperjs Framework
 
-BetterHelperjs — полноценный full-stack TypeScript фреймворк со своим JSX runtime, file-based router, nested layouts, loaders и SSR от Rigby Foundation.
-Базовый пакет не тянет обязательные runtime-зависимости (prod deps = 0).
+BetterHelperjs is a full-stack TypeScript framework with its own JSX runtime, file-based router, nested layouts, loaders, and SSR by Rigby Foundation.
+The base package has no mandatory runtime dependencies (prod deps = 0).
 
 ## Attribution
 
-Изначальная идея и база: [`newHelper-js`](https://github.com/MIOBOMB/newHelper-js/) от MIOBOMB.
+Original idea and base: [`newHelper-js`](https://github.com/MIOBOMB/newHelper-js/) by MIOBOMB.
 
 ## Root scripts
 
@@ -14,26 +14,26 @@ npm install
 npm run check
 npm run test
 npm run build
-npm run dev         # запускает тестовый SSR сайт из ./site
+npm run dev         # starts the test SSR site from ./site
 ```
 
 ## CLI
 
-Создать новый Vite + SSR проект:
+Create a new Vite + SSR project:
 
 ```bash
 npx better-helperjs create my-app
 ```
 
-Опции:
+Options:
 
 - `--pm npm|pnpm|yarn|bun`
 - `--no-install`
 - `--force`
 
-## Тестовый сайт
+## Test Site
 
-Тестовый SSR сайт теперь отдельным пакетом: `site/package.json`.
+The test SSR site is now a separate package: `site/package.json`.
 
 ```bash
 npm --prefix site install
@@ -42,7 +42,7 @@ npm --prefix site run build
 npm --prefix site run start
 ```
 
-Где страницы:
+Where pages are:
 
 - `site/src/layout.tsx`
 - `site/src/pages/index.tsx`
@@ -50,11 +50,11 @@ npm --prefix site run start
 - `site/src/pages/docs/[slug].tsx`
 - `site/src/pages/404.tsx`
 
-## JSX и роутер без React/Preact
+## JSX and router without React/Preact
 
 - JSX runtime: `better-helperjs/jsx-runtime`, `better-helperjs/jsx-dev-runtime`, `better-helperjs/jsx`
-- Hooks: `useState`, `useReducer`, `useEffect`, `useMemo`, `useCallback`, `useRef` из `better-helperjs/jsx`
-- Context API: `createContext`, `useContext` из `better-helperjs/jsx`
+- Hooks: `useState`, `useReducer`, `useEffect`, `useMemo`, `useCallback`, `useRef` from `better-helperjs/jsx`
+- Context API: `createContext`, `useContext` from `better-helperjs/jsx`
 - Router core: `better-helperjs/router`
 - File-based router helpers: `better-helperjs/router/file-based`
 - State helpers: `better-helperjs/core` (`createCounterRenderState`, `serializeState`, ...)
@@ -62,27 +62,27 @@ npm --prefix site run start
 ### File-based router extras
 
 - Nested layouts: `pages/layout.tsx`, `pages/docs/layout.tsx`, ...
-- Route loader: `export function loader(ctx) { ... }`, данные доступны как `ctx.data`
+- Route loader: `export function loader(ctx) { ... }`, data available as `ctx.data`
 - Error entities: `pages/error.tsx` (global), `export const errorBoundary = ...` (route-level)
-- Not Found entities: `pages/404.tsx` или `pages/not-found.tsx`
-- `notFound()` helper для loader/component сценариев
-- SPA links: `<Link href=\"/route\" />` из `better-helperjs/router`
-- Dev SSR server (`better-helperjs/ssr/site-server`) требует `vite` в проекте приложения.
+- Not Found entities: `pages/404.tsx` or `pages/not-found.tsx`
+- `notFound()` helper for loader/component scenarios
+- SPA links: `<Link href=\"/route\" />` from `better-helperjs/router`
+- Dev SSR server (`better-helperjs/ssr/site-server`) requires `vite` in the application project.
 
 ### SSR modes
 
-- `hydrateMode: 'full'` — стандартная hydration всего приложения
-- `hydrateMode: 'none'` — no-hydration SSR (чистый HTML без клиентского entry)
-- `hydrateMode: 'islands'` — частичная hydration через islands (`defineIsland`, `hydrateIslands`)
+- `hydrateMode: 'full'` — standard hydration of the entire application
+- `hydrateMode: 'none'` — no-hydration SSR (pure HTML without client entry)
+- `hydrateMode: 'islands'` — partial hydration via islands (`defineIsland`, `hydrateIslands`)
 - SSR streaming helpers: `renderWithRouterStream`, `createHtmlChunkStream`, `streamToNodeResponse`
 
 ## Legacy Browser Build
 
-После `npm run build` дополнительно собирается `dist/vite/better-helper.iife.js` (target: `es2015`), чтобы подключать фреймворк в старых браузерах через обычный `<script>`.
+After `npm run build`, `dist/vite/better-helper.iife.js` (target: `es2015`) is additionally built to include the framework in legacy browsers via a plain `<script>`.
 
 ## Legacy API (Deprecated)
 
-Эти API сохранены для совместимости и будут удалены в `3.2.0`:
+These APIs are kept for compatibility and will be removed in `3.2.0`:
 
 - `lang._(...)`
 - `lazy._(...)`
