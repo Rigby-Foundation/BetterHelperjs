@@ -26,7 +26,7 @@ function HomePage(ctx: RouteContext<SsrAppState>) {
   return (
     <section>
       <h2 style="margin:0 0 8px;">Home</h2>
-      <p style="margin:0 0 8px;">Framework-native JSX runtime работает без React/Preact.</p>
+      <p style="margin:0 0 8px;">Framework-native JSX runtime works without React/Preact.</p>
       <p style="margin:0 0 8px;">
         Try route param page: <Link href="/docs/getting-started">docs/getting-started</Link>
       </p>

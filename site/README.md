@@ -1,8 +1,8 @@
 # BetterHelper Test Site
 
-Отдельный пакет для SSR тестового сайта на основе `better-helperjs`.
+A separate package for the SSR test site based on `better-helperjs`.
 
-## Команды
+## Commands
 
 ```bash
 npm install
@@ -23,7 +23,7 @@ npm run start
 
 ## Loaders + data
 
-В page-модуле можно экспортировать:
+In a page module, you can export:
 
 ```ts
 export function loader(ctx) {
@@ -31,27 +31,27 @@ export function loader(ctx) {
 }
 ```
 
-Данные loader доступны в компоненте страницы через `ctx.data`.
+Loader data is available in the page component via `ctx.data`.
 
 ## SPA Link
 
-Для внутренних переходов используйте `Link`:
+For internal navigation, use `Link`:
 
 ```tsx
 import { Link } from 'better-helperjs/router';
 ```
 
-## Что осталось в приложении
+## What remains in the application
 
-- `src/layout.tsx` — layout (shell) уровня приложения
-- `src/app.tsx` — тонкий bootstrap: `pages` + `layout` -> `defineCounterSite(...)`
-- `src/pages/*` — сами страницы
+- `src/layout.tsx` — application-level layout (shell)
+- `src/app.tsx` — thin bootstrap: `pages` + `layout` -> `defineCounterSite(...)`
+- `src/pages/*` — the pages themselves
 
-`entry-client.ts`, `entry-server.ts`, `router.ts`, `state.ts`, `types.ts` полностью вынесены в framework (`better-helperjs/ssr`, `better-helperjs/router/file-based`, `better-helperjs/core`).
+`entry-client.ts`, `entry-server.ts`, `router.ts`, `state.ts`, `types.ts` are fully moved to the framework (`better-helperjs/ssr`, `better-helperjs/router/file-based`, `better-helperjs/core`).
 
 ## SSR hydration modes
 
-В `defineCounterSite(...)` можно переключать:
+In `defineCounterSite(...)`, you can switch between:
 
 - `hydrateMode: 'full'` (default)
 - `hydrateMode: 'none'` (no-hydration SSR)
