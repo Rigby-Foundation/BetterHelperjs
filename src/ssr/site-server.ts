@@ -256,7 +256,9 @@ async function runDevMiddlewares(vite: DevViteServer, request: IncomingMessage, 
   return response.writableEnded;
 }
 
-export async function createConventionSiteServer(options: ConventionSiteServerOptions = {}): Promise<void> {
+export type SiteHandler = (request: IncomingMessage, response: ServerResponse) => Promise<void>;
+
+export async function createConventionSiteHandler(options: ConventionSiteServerOptions = {}): Promise<SiteHandler> {
   const normalized: Required<ConventionSiteServerOptions> = {
     root: options.root ?? process.cwd(),
     port: options.port ?? Number(process.env.PORT ?? 4173),
@@ -294,7 +296,7 @@ export async function createConventionSiteServer(options: ConventionSiteServerOp
     clientDistRoot = path.resolve(normalized.root, normalized.clientDistDir);
   }
 
-  const server = createServer(async (request, response) => {
+  return async (request: IncomingMessage, response: ServerResponse) => {
     const method = (request.method ?? 'GET').toUpperCase();
     const requestUrl = request.url ?? '/';
     const parsedUrl = new URL(requestUrl, 'http://localhost');
@@ -378,11 +380,19 @@ export async function createConventionSiteServer(options: ConventionSiteServerOp
       response.setHeader('Content-Type', 'text/plain; charset=utf-8');
       response.end('Internal Server Error');
     }
-  });
+  };
+}
 
-  server.listen(normalized.port, () => {
+export async function createConventionSiteServer(options: ConventionSiteServerOptions = {}): Promise<void> {
+  const handler = await createConventionSiteHandler(options);
+  const port = options.port ?? Number(process.env.PORT ?? 4173);
+  
+  const server = createServer(handler);
+
+  server.listen(port, () => {
+    const isProd = process.env.NODE_ENV === 'production';
     const mode = isProd ? 'prod' : 'dev';
-    console.log(`[site:ssr:${mode}] http://localhost:${normalized.port}`);
+    console.log(`[site:ssr:${mode}] http://localhost:${port}`);
   });
 }
 
