@@ -120,17 +120,71 @@ function toStyleString(value: unknown): string {
   return parts.join(';');
 }
 
+// Common camelCase SVG presentation attributes → kebab-case
+const SVG_CAMEL_ATTRS: Record<string, string> = {
+  strokeWidth: 'stroke-width',
+  strokeLinecap: 'stroke-linecap',
+  strokeLinejoin: 'stroke-linejoin',
+  strokeDasharray: 'stroke-dasharray',
+  strokeDashoffset: 'stroke-dashoffset',
+  strokeMiterlimit: 'stroke-miterlimit',
+  strokeOpacity: 'stroke-opacity',
+  fillOpacity: 'fill-opacity',
+  fillRule: 'fill-rule',
+  clipPath: 'clip-path',
+  clipRule: 'clip-rule',
+  textAnchor: 'text-anchor',
+  textDecoration: 'text-decoration',
+  dominantBaseline: 'dominant-baseline',
+  alignmentBaseline: 'alignment-baseline',
+  baselineShift: 'baseline-shift',
+  colorInterpolation: 'color-interpolation',
+  colorRendering: 'color-rendering',
+  shapeRendering: 'shape-rendering',
+  imageRendering: 'image-rendering',
+  letterSpacing: 'letter-spacing',
+  wordSpacing: 'word-spacing',
+  fontFamily: 'font-family',
+  fontSize: 'font-size',
+  fontStyle: 'font-style',
+  fontWeight: 'font-weight',
+  fontVariant: 'font-variant',
+  fontStretch: 'font-stretch',
+  markerStart: 'marker-start',
+  markerMid: 'marker-mid',
+  markerEnd: 'marker-end',
+  stopColor: 'stop-color',
+  stopOpacity: 'stop-opacity',
+  floodColor: 'flood-color',
+  floodOpacity: 'flood-opacity',
+  lightingColor: 'lighting-color',
+  gradientUnits: 'gradientUnits',
+  gradientTransform: 'gradientTransform',
+  patternUnits: 'patternUnits',
+  patternTransform: 'patternTransform',
+  vectorEffect: 'vector-effect',
+  paintOrder: 'paint-order',
+  viewBox: 'viewBox',
+};
+
+function normalizeAttrName(key: string): string {
+  if (key === 'className') return 'class';
+  if (key === 'htmlFor') return 'for';
+  if (SVG_CAMEL_ATTRS[key]) return SVG_CAMEL_ATTRS[key];
+  return key;
+}
+
 function renderPropsToString(props: Record<string, unknown>): string {
   const parts: string[] = [];
 
   for (const key of Object.keys(props)) {
-    if (key === 'children' || key === 'key' || key === 'ref') continue;
+    if (key === 'children' || key === 'key' || key === 'ref' || key === 'dangerouslySetInnerHTML') continue;
 
     const value = props[key];
     if (value == null || value === false || typeof value === 'function') continue;
     if (key.startsWith('on')) continue;
 
-    const attr = key === 'className' ? 'class' : key;
+    const attr = normalizeAttrName(key);
 
     if (value === true) {
       parts.push(attr);
@@ -320,19 +374,35 @@ function renderToStringInternal(node: VNodeChild, runtime: HookRuntime, path: st
   }
 
   const tag = node.type;
-  const attrs = renderPropsToString(node.props as Record<string, unknown>);
-  const children = flatten((node.props as { children?: VNodeChild | VNodeChild[] }).children);
+  const props = node.props as Record<string, unknown>;
+  const attrs = renderPropsToString(props);
 
   if (VOID_TAGS.has(tag)) {
     return `<${tag}${attrs}>`;
   }
 
+  // Support dangerouslySetInnerHTML (like React)
+  const inner = props['dangerouslySetInnerHTML'] as { __html: string } | undefined;
+  if (inner && typeof inner.__html === 'string') {
+    return `<${tag}${attrs}>${inner.__html}</${tag}>`;
+  }
+
+  const children = flatten((props as { children?: VNodeChild | VNodeChild[] }).children);
   const content = children.map((child, index) => renderToStringInternal(child, runtime, `${path}.${index}`)).join('');
   return `<${tag}${attrs}>${content}</${tag}>`;
 }
 
 function setDomProp(element: HTMLElement, key: string, value: unknown): void {
   if (key === 'children' || key === 'key' || key === 'ref') return;
+
+  // dangerouslySetInnerHTML support
+  if (key === 'dangerouslySetInnerHTML') {
+    const inner = value as { __html: string } | null | undefined;
+    if (inner && typeof inner.__html === 'string') {
+      element.innerHTML = inner.__html;
+    }
+    return;
+  }
 
   if (key.startsWith('on') && typeof value === 'function') {
     const eventName = key.slice(2).toLowerCase();
@@ -342,7 +412,7 @@ function setDomProp(element: HTMLElement, key: string, value: unknown): void {
 
   if (value == null || value === false) return;
 
-  const attr = key === 'className' ? 'class' : key;
+  const attr = normalizeAttrName(key);
 
   if (attr === 'style' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
     const styleRecord = value as Record<string, unknown>;
@@ -402,7 +472,18 @@ function renderToDomInternal(node: VNodeChild, doc: Document, runtime: HookRunti
     );
   }
 
-  const element = doc.createElement(node.type);
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const SVG_TAGS = new Set([
+    'svg','path','circle','rect','line','polyline','polygon','ellipse',
+    'g','defs','use','symbol','clipPath','mask','pattern','image',
+    'text','tspan','textPath','marker','filter','feBlend','feColorMatrix',
+    'feComposite','feFlood','feGaussianBlur','feMerge','feMorphology',
+    'feOffset','feTurbulence','linearGradient','radialGradient','stop',
+  ]);
+
+  const element = SVG_TAGS.has(node.type)
+    ? (doc.createElementNS(SVG_NS, node.type) as unknown as HTMLElement)
+    : doc.createElement(node.type);
   const props = node.props as Record<string, unknown>;
 
   for (const key of Object.keys(props)) {
