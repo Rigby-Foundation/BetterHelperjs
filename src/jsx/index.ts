@@ -1,6 +1,15 @@
+import {
+  createHostDom,
+  hydrateHostChildren,
+  isVoidTag,
+  patchHostChildren,
+  serializeHostNodes,
+  type HostElement,
+  type HostKey,
+  type HostNode,
+  type HydrateReport,
+} from './host.js';
 import { Fragment, type Primitive, type VNode, type VNodeChild, type VNodeType } from './jsx-runtime.js';
-
-const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
 
 interface EffectEntry {
   deps?: readonly unknown[];
@@ -25,8 +34,10 @@ interface HookRuntime {
 interface MountedRuntime extends HookRuntime {
   root: Element;
   currentNode: VNodeChild;
+  hostTree: HostNode[];
   rendering: boolean;
   rerenderQueued: boolean;
+  pendingHydrate: boolean;
 }
 
 interface StateSlot<T> {
@@ -65,7 +76,7 @@ export interface ContextProviderProps<T> {
 }
 
 type ContextProviderComponent<T> = ((props: Record<string, unknown> & { children?: VNodeChild | VNodeChild[] }) => VNodeChild) & {
-  __bhContext: Context<T>;
+  __karuiContext: Context<T>;
 };
 
 export interface Context<T> {
@@ -77,137 +88,8 @@ function isVNode(value: VNodeChild): value is VNode {
   return typeof value === 'object' && value !== null && !Array.isArray(value) && 'type' in value && 'props' in value;
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-function flatten(children: VNodeChild | VNodeChild[] | undefined): VNodeChild[] {
-  if (children == null) return [];
-
-  const result: VNodeChild[] = [];
-  const stack = Array.isArray(children) ? [...children] : [children];
-
-  while (stack.length > 0) {
-    const current = stack.shift() as VNodeChild;
-
-    if (Array.isArray(current)) {
-      stack.unshift(...current);
-      continue;
-    }
-
-    result.push(current);
-  }
-
-  return result;
-}
-
-function toStyleString(value: unknown): string {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return String(value);
-  }
-
-  const parts: string[] = [];
-  const styleRecord = value as Record<string, unknown>;
-
-  for (const key of Object.keys(styleRecord)) {
-    const styleValue = styleRecord[key];
-    if (styleValue == null || styleValue === false) continue;
-
-    const cssKey = key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
-    parts.push(`${cssKey}:${String(styleValue)}`);
-  }
-
-  return parts.join(';');
-}
-
-// Common camelCase SVG presentation attributes → kebab-case
-const SVG_CAMEL_ATTRS: Record<string, string> = {
-  strokeWidth: 'stroke-width',
-  strokeLinecap: 'stroke-linecap',
-  strokeLinejoin: 'stroke-linejoin',
-  strokeDasharray: 'stroke-dasharray',
-  strokeDashoffset: 'stroke-dashoffset',
-  strokeMiterlimit: 'stroke-miterlimit',
-  strokeOpacity: 'stroke-opacity',
-  fillOpacity: 'fill-opacity',
-  fillRule: 'fill-rule',
-  clipPath: 'clip-path',
-  clipRule: 'clip-rule',
-  textAnchor: 'text-anchor',
-  textDecoration: 'text-decoration',
-  dominantBaseline: 'dominant-baseline',
-  alignmentBaseline: 'alignment-baseline',
-  baselineShift: 'baseline-shift',
-  colorInterpolation: 'color-interpolation',
-  colorRendering: 'color-rendering',
-  shapeRendering: 'shape-rendering',
-  imageRendering: 'image-rendering',
-  letterSpacing: 'letter-spacing',
-  wordSpacing: 'word-spacing',
-  fontFamily: 'font-family',
-  fontSize: 'font-size',
-  fontStyle: 'font-style',
-  fontWeight: 'font-weight',
-  fontVariant: 'font-variant',
-  fontStretch: 'font-stretch',
-  markerStart: 'marker-start',
-  markerMid: 'marker-mid',
-  markerEnd: 'marker-end',
-  stopColor: 'stop-color',
-  stopOpacity: 'stop-opacity',
-  floodColor: 'flood-color',
-  floodOpacity: 'flood-opacity',
-  lightingColor: 'lighting-color',
-  gradientUnits: 'gradientUnits',
-  gradientTransform: 'gradientTransform',
-  patternUnits: 'patternUnits',
-  patternTransform: 'patternTransform',
-  vectorEffect: 'vector-effect',
-  paintOrder: 'paint-order',
-  viewBox: 'viewBox',
-};
-
-function normalizeAttrName(key: string): string {
-  if (key === 'className') return 'class';
-  if (key === 'htmlFor') return 'for';
-  if (SVG_CAMEL_ATTRS[key]) return SVG_CAMEL_ATTRS[key];
-  return key;
-}
-
-function renderPropsToString(props: Record<string, unknown>): string {
-  const parts: string[] = [];
-
-  for (const key of Object.keys(props)) {
-    if (key === 'children' || key === 'key' || key === 'ref' || key === 'dangerouslySetInnerHTML') continue;
-
-    const value = props[key];
-    if (value == null || value === false || typeof value === 'function') continue;
-    if (key.startsWith('on')) continue;
-
-    const attr = normalizeAttrName(key);
-
-    if (value === true) {
-      parts.push(attr);
-      continue;
-    }
-
-    const attrValue = attr === 'style' ? toStyleString(value) : String(value);
-    parts.push(`${attr}="${escapeHtml(attrValue)}"`);
-  }
-
-  return parts.length ? ` ${parts.join(' ')}` : '';
-}
-
-function resolveComponent(type: VNodeType, props: Record<string, unknown>): VNodeChild {
-  if (type === Fragment) {
-    return props.children as VNodeChild;
-  }
-
-  return (type as (p: Record<string, unknown>) => VNodeChild)(props);
-}
-
 function isContextProviderType(type: VNodeType): type is ContextProviderComponent<unknown> {
-  return typeof type === 'function' && '__bhContext' in type;
+  return typeof type === 'function' && '__karuiContext' in type;
 }
 
 function withContextValue<T, TResult>(runtime: HookRuntime, context: Context<T>, value: T, render: () => TResult): TResult {
@@ -341,164 +223,128 @@ function queueEffect(runtime: HookRuntime, store: HookStore, index: number): voi
   });
 }
 
-function renderToStringInternal(node: VNodeChild, runtime: HookRuntime, path: string): string {
-  if (node == null || typeof node === 'boolean') return '';
+/* ---------------------------------------------------------------- normalize */
+
+/**
+ * Flatten a VNode tree into host nodes, running components (and their hooks)
+ * on the way down. One walk feeds SSR, client render, and hydration alike,
+ * which is what lets hydration trust that both sides produced the same shape.
+ *
+ * Hook identity comes from the path built here. A keyed child contributes
+ * `$<key>` instead of its index, so hook state follows the item rather than
+ * the slot it happens to occupy.
+ */
+function normalizeInto(out: HostNode[], node: VNodeChild, runtime: HookRuntime, path: string, svg: boolean): void {
+  if (node == null || typeof node === 'boolean') {
+    // A stable placeholder keeps sibling positions steady across renders.
+    out.push({ kind: 'text', key: null, value: '' });
+    return;
+  }
 
   if (typeof node === 'string' || typeof node === 'number') {
-    return escapeHtml(String(node));
+    out.push({ kind: 'text', key: null, value: String(node) });
+    return;
   }
 
   if (Array.isArray(node)) {
-    return node.map((child, index) => renderToStringInternal(child, runtime, `${path}.${index}`)).join('');
+    normalizeChildren(out, node, runtime, path, svg);
+    return;
   }
 
   if (!isVNode(node)) {
-    return '';
+    out.push({ kind: 'text', key: null, value: '' });
+    return;
   }
 
   if (node.type === Fragment) {
-    return renderToStringInternal(resolveComponent(node.type, node.props as Record<string, unknown>), runtime, `${path}.f`);
+    normalizeChildren(out, (node.props as { children?: VNodeChild | VNodeChild[] }).children, runtime, `${path}.f`, svg);
+    return;
   }
 
   if (isContextProviderType(node.type)) {
     const props = node.props as unknown as ContextProviderProps<unknown>;
-    return withContextValue(runtime, node.type.__bhContext, props.value, () =>
-      renderToStringInternal(props.children ?? null, runtime, `${path}.p`)
-    );
+    withContextValue(runtime, node.type.__karuiContext, props.value, () => {
+      normalizeChildren(out, props.children, runtime, `${path}.p`, svg);
+    });
+    return;
   }
 
   if (typeof node.type === 'function') {
-    return withHooks(runtime, path, () =>
-      renderToStringInternal(resolveComponent(node.type, node.props as Record<string, unknown>), runtime, `${path}.0`)
-    );
+    const render = node.type as (props: Record<string, unknown>) => VNodeChild;
+    withHooks(runtime, path, () => {
+      normalizeInto(out, render(node.props as Record<string, unknown>), runtime, `${path}.0`, svg);
+    });
+    return;
   }
 
   const tag = node.type;
   const props = node.props as Record<string, unknown>;
-  const attrs = renderPropsToString(props);
+  const elementSvg = svg || tag === 'svg';
 
-  if (VOID_TAGS.has(tag)) {
-    return `<${tag}${attrs}>`;
-  }
+  const element: HostElement = {
+    kind: 'element',
+    tag,
+    svg: elementSvg,
+    key: node.key,
+    props,
+    children: [],
+  };
 
-  // Support dangerouslySetInnerHTML (like React)
-  const inner = props['dangerouslySetInnerHTML'] as { __html: string } | undefined;
-  if (inner && typeof inner.__html === 'string') {
-    return `<${tag}${attrs}>${inner.__html}</${tag}>`;
-  }
-
-  const children = flatten((props as { children?: VNodeChild | VNodeChild[] }).children);
-  const content = children.map((child, index) => renderToStringInternal(child, runtime, `${path}.${index}`)).join('');
-  return `<${tag}${attrs}>${content}</${tag}>`;
-}
-
-function setDomProp(element: HTMLElement, key: string, value: unknown): void {
-  if (key === 'children' || key === 'key' || key === 'ref') return;
-
-  // dangerouslySetInnerHTML support
-  if (key === 'dangerouslySetInnerHTML') {
-    const inner = value as { __html: string } | null | undefined;
-    if (inner && typeof inner.__html === 'string') {
-      element.innerHTML = inner.__html;
-    }
-    return;
-  }
-
-  if (key.startsWith('on') && typeof value === 'function') {
-    const eventName = key.slice(2).toLowerCase();
-    element.addEventListener(eventName, value as EventListener);
-    return;
-  }
-
-  if (value == null || value === false) return;
-
-  const attr = normalizeAttrName(key);
-
-  if (attr === 'style' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
-    const styleRecord = value as Record<string, unknown>;
-
-    for (const styleKey of Object.keys(styleRecord)) {
-      const styleValue = styleRecord[styleKey];
-      if (styleValue == null) continue;
-      (element.style as CSSStyleDeclaration & Record<string, string>)[styleKey] = String(styleValue);
-    }
-
-    return;
-  }
-
-  if (value === true) {
-    element.setAttribute(attr, '');
-    return;
-  }
-
-  element.setAttribute(attr, String(value));
-}
-
-function renderToDomInternal(node: VNodeChild, doc: Document, runtime: HookRuntime, path: string): Node {
-  if (node == null || typeof node === 'boolean') {
-    return doc.createTextNode('');
-  }
-
-  if (typeof node === 'string' || typeof node === 'number') {
-    return doc.createTextNode(String(node));
-  }
-
-  if (Array.isArray(node)) {
-    const fragment = doc.createDocumentFragment();
-    for (let index = 0; index < node.length; index += 1) {
-      fragment.appendChild(renderToDomInternal(node[index], doc, runtime, `${path}.${index}`));
-    }
-    return fragment;
-  }
-
-  if (!isVNode(node)) {
-    return doc.createTextNode('');
-  }
-
-  if (node.type === Fragment) {
-    return renderToDomInternal(resolveComponent(node.type, node.props as Record<string, unknown>), doc, runtime, `${path}.f`);
-  }
-
-  if (isContextProviderType(node.type)) {
-    const props = node.props as unknown as ContextProviderProps<unknown>;
-    return withContextValue(runtime, node.type.__bhContext, props.value, () =>
-      renderToDomInternal(props.children ?? null, doc, runtime, `${path}.p`)
+  if (!isVoidTag(tag) && props['dangerouslySetInnerHTML'] === undefined) {
+    normalizeChildren(
+      element.children,
+      (props as { children?: VNodeChild | VNodeChild[] }).children,
+      runtime,
+      path,
+      // <foreignObject> switches back to the HTML namespace for its subtree.
+      elementSvg && tag !== 'foreignObject'
     );
   }
 
-  if (typeof node.type === 'function') {
-    return withHooks(runtime, path, () =>
-      renderToDomInternal(resolveComponent(node.type, node.props as Record<string, unknown>), doc, runtime, `${path}.0`)
-    );
-  }
+  out.push(element);
+}
 
-  const SVG_NS = 'http://www.w3.org/2000/svg';
-  const SVG_TAGS = new Set([
-    'svg','path','circle','rect','line','polyline','polygon','ellipse',
-    'g','defs','use','symbol','clipPath','mask','pattern','image',
-    'text','tspan','textPath','marker','filter','feBlend','feColorMatrix',
-    'feComposite','feFlood','feGaussianBlur','feMerge','feMorphology',
-    'feOffset','feTurbulence','linearGradient','radialGradient','stop',
-  ]);
+function normalizeChildren(
+  out: HostNode[],
+  children: VNodeChild | VNodeChild[] | undefined,
+  runtime: HookRuntime,
+  path: string,
+  svg: boolean
+): void {
+  if (children == null) return;
 
-  const element = SVG_TAGS.has(node.type)
-    ? (doc.createElementNS(SVG_NS, node.type) as unknown as HTMLElement)
-    : doc.createElement(node.type);
-  const props = node.props as Record<string, unknown>;
+  const list = Array.isArray(children) ? children : [children];
+  const usedSegments = new Set<string>();
 
-  for (const key of Object.keys(props)) {
-    setDomProp(element, key, props[key]);
-  }
+  for (let index = 0; index < list.length; index += 1) {
+    const child = list[index];
+    const key: HostKey = isVNode(child) ? child.key : null;
 
-  const children = flatten((props as { children?: VNodeChild | VNodeChild[] }).children);
-  if (!VOID_TAGS.has(node.type)) {
-    for (let index = 0; index < children.length; index += 1) {
-      element.appendChild(renderToDomInternal(children[index], doc, runtime, `${path}.${index}`));
+    let segment = key == null ? String(index) : `$${key}`;
+    if (key != null && usedSegments.has(segment)) {
+      // Duplicate keys must not silently share one hook store.
+      segment = `${segment}#${index}`;
+    }
+    usedSegments.add(segment);
+
+    const before = out.length;
+    normalizeInto(out, child, runtime, `${path}.${segment}`, svg);
+
+    // A key written on a component belongs to the host node that component
+    // produced, so reconciliation can match it across reorders.
+    if (key != null && out.length > before && out[before].key == null) {
+      out[before].key = key;
     }
   }
-
-  return element;
 }
+
+function normalizeRoot(node: VNodeChild, runtime: HookRuntime): HostNode[] {
+  const out: HostNode[] = [];
+  normalizeInto(out, node, runtime, '0', false);
+  return out;
+}
+
+/* -------------------------------------------------------------------- mount */
 
 function commitMountedRuntime(runtime: MountedRuntime): void {
   if (runtime.rendering) {
@@ -514,8 +360,16 @@ function commitMountedRuntime(runtime: MountedRuntime): void {
       prepareRuntime(runtime);
 
       const owner = runtime.root.ownerDocument ?? document;
-      const nextTree = renderToDomInternal(runtime.currentNode, owner, runtime, '0');
-      runtime.root.replaceChildren(nextTree);
+      const nextTree = normalizeRoot(runtime.currentNode, runtime);
+
+      if (runtime.pendingHydrate) {
+        runtime.pendingHydrate = false;
+        hydrateHostChildren(runtime.root, nextTree, owner);
+      } else {
+        patchHostChildren(runtime.root, runtime.hostTree, nextTree, owner);
+      }
+
+      runtime.hostTree = nextTree;
 
       cleanupUnmounted(runtime);
       flushEffects(runtime);
@@ -534,8 +388,10 @@ function createMountedRuntime(root: Element, node: VNodeChild): MountedRuntime {
     pendingEffects: [],
     root,
     currentNode: node,
+    hostTree: [],
     rendering: false,
     rerenderQueued: false,
+    pendingHydrate: false,
     scheduleRender: () => {
       runtime.rerenderQueued = true;
       commitMountedRuntime(runtime);
@@ -548,25 +404,79 @@ function createMountedRuntime(root: Element, node: VNodeChild): MountedRuntime {
 export function renderToString(node: VNodeChild): string {
   const runtime = createStaticRuntime();
   prepareRuntime(runtime);
-  const html = renderToStringInternal(node, runtime, '0');
+  const tree = normalizeRoot(node, runtime);
   cleanupUnmounted(runtime);
-  return html;
+  return serializeHostNodes(tree);
 }
 
 export function renderToDom(node: VNodeChild, doc: Document = document): Node {
   const runtime = createStaticRuntime();
   prepareRuntime(runtime);
-  const result = renderToDomInternal(node, doc, runtime, '0');
+  const tree = normalizeRoot(node, runtime);
   cleanupUnmounted(runtime);
-  return result;
+
+  if (tree.length === 1) {
+    return createHostDom(tree[0], doc);
+  }
+
+  const fragment = doc.createDocumentFragment();
+  for (const child of tree) {
+    fragment.appendChild(createHostDom(child, doc));
+  }
+
+  return fragment;
 }
 
+/**
+ * Render `node` into `root`, reusing the DOM already there.
+ *
+ * Updates diff against the previous render, so element identity, focus,
+ * text selection, scroll offsets and uncontrolled input values all survive.
+ */
 export function mount(root: Element, node: VNodeChild): void {
   const runtime = runtimeByRoot.get(root) ?? createMountedRuntime(root, node);
   runtime.currentNode = node;
   runtimeByRoot.set(root, runtime);
   runtime.scheduleRender();
 }
+
+/**
+ * Adopt server-rendered markup inside `root` rather than rebuilding it: attach
+ * event handlers and hook state to the DOM that is already on the page. Later
+ * updates behave exactly like `mount`.
+ */
+export function hydrate(root: Element, node: VNodeChild): void {
+  const existing = runtimeByRoot.get(root);
+
+  if (existing) {
+    mount(root, node);
+    return;
+  }
+
+  const runtime = createMountedRuntime(root, node);
+  runtime.pendingHydrate = true;
+  runtimeByRoot.set(root, runtime);
+  runtime.scheduleRender();
+}
+
+/** Tear down a mounted root: run effect cleanups, release refs, empty the DOM. */
+export function unmount(root: Element): void {
+  const runtime = runtimeByRoot.get(root);
+  if (!runtime) return;
+
+  const owner = root.ownerDocument ?? document;
+  patchHostChildren(root, runtime.hostTree, [], owner);
+
+  for (const store of runtime.stores.values()) {
+    cleanupStore(store);
+  }
+
+  runtime.stores.clear();
+  runtime.hostTree = [];
+  runtimeByRoot.delete(root);
+}
+
+/* -------------------------------------------------------------------- hooks */
 
 export function useState<T>(initialState: T | (() => T)): [T, (next: SetStateAction<T>) => void] {
   const { runtime, store, index } = nextHookSlot('useState');
@@ -688,7 +598,7 @@ export function createContext<T>(defaultValue: T): Context<T> {
 
   const Provider = ((props: Record<string, unknown> & { children?: VNodeChild | VNodeChild[] }) =>
     props.children ?? null) as ContextProviderComponent<T>;
-  Provider.__bhContext = context;
+  Provider.__karuiContext = context;
   context.Provider = Provider;
 
   return context;
@@ -733,5 +643,5 @@ export function useEffect(effect: EffectCallback, deps?: readonly unknown[]): vo
   }
 }
 
-export type { Primitive, VNode, VNodeChild, VNodeType };
+export type { HostElement, HostNode, HydrateReport, Primitive, VNode, VNodeChild, VNodeType };
 export { Fragment };

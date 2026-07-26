@@ -11,11 +11,11 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"],
     "jsx": "react-jsx",
-    "jsxImportSource": "better-helperjs",
+    "jsxImportSource": "@rigbyhost/karui",
     "baseUrl": ".",
     "paths": {
-      "better-helperjs/jsx-runtime": ["src/jsx/jsx-runtime.ts"],
-      "better-helperjs/jsx-dev-runtime": ["src/jsx/jsx-dev-runtime.ts"]
+      "@rigbyhost/karui/jsx-runtime": ["src/jsx/jsx-runtime.ts"],
+      "@rigbyhost/karui/jsx-dev-runtime": ["src/jsx/jsx-dev-runtime.ts"]
     },
     "outDir": "dist",
     "rootDir": "src",

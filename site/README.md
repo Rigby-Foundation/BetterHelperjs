@@ -1,4 +1,4 @@
-# BetterHelper Test Site
+# Karui Test Site
 
 A separate package for the SSR test site based on `@rigbyhost/karui`.
 

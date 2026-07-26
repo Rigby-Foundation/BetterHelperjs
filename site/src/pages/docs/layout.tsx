@@ -1,6 +1,6 @@
 import { Link } from '@rigbyhost/karui/router';
 import type { FileLayoutProps } from '@rigbyhost/karui/router/file-based';
-import type { CounterSiteState } from '@rigbyhost/karui/ssr';
+import type { RenderState } from '@rigbyhost/karui/ssr';
 
 const docsStyle = [
   'margin-top:10px',
@@ -10,7 +10,7 @@ const docsStyle = [
   'background:#fff',
 ].join(';');
 
-export default function DocsLayout({ children }: FileLayoutProps<CounterSiteState>) {
+export default function DocsLayout({ children }: FileLayoutProps<RenderState>) {
   return (
     <div style={docsStyle}>
       <p style="margin:0 0 8px;font-size:12px;">

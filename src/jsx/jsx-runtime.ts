@@ -13,7 +13,7 @@ export interface VNode<P = Record<string, unknown>> {
 
 export type VNodeChild = VNode | Primitive | VNodeChild[];
 
-export const Fragment = Symbol.for('betterhelper.fragment');
+export const Fragment = Symbol.for('karui.fragment');
 
 function normalizeProps<P extends Record<string, unknown>>(
   props: P | null | undefined

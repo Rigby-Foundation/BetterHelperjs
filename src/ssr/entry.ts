@@ -1,15 +1,7 @@
 import { detectRuntime } from '../core/runtime.js';
 import { renderWithRouter, type RenderWithRouterResult, type ShellRenderer, type MountWithRouterOptions, mountWithRouter } from './runtime.js';
 import type { Router } from '../router/index.js';
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+import { renderHead } from './head.js';
 
 export interface ServerRenderResult<State> extends RenderWithRouterResult {
   head: string;
@@ -41,7 +33,7 @@ export function createServerRenderer<State>(options: CreateServerRendererOptions
 
     return {
       ...rendered,
-      head: `<title>${escapeHtml(rendered.title)}</title>`,
+      head: renderHead(rendered.meta, rendered.title),
       state,
     };
   };

@@ -1,10 +1,10 @@
-import type { CounterSiteRouteContext } from '@rigbyhost/karui/ssr';
+import type { SiteRouteContext } from '@rigbyhost/karui/ssr';
 
 export const meta = {
   title: '404',
 };
 
-export default function NotFoundPage(ctx: CounterSiteRouteContext) {
+export default function NotFoundPage(ctx: SiteRouteContext) {
   return (
     <section>
       <h2 style="margin:0 0 8px;">404</h2>

@@ -4,35 +4,42 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { serializeState, type CounterRenderState } from '../core/state.js';
+import type { RenderState } from '../core/state.js';
+import { createRouteRequest, isMutationMethod, type RouteRequest } from '../router/request.js';
 import { createHtmlChunkStream, streamToNodeResponse } from './stream.js';
-
-type HydrationMode = 'full' | 'islands' | 'none';
+import {
+  applyTemplate,
+  createPreloadTags,
+  resolveHydrationMode,
+  resolveManifestEntryKey,
+  type HydrationMode,
+  type Manifest,
+} from './template.js';
 
 interface RenderResult {
   html: string;
   head: string;
   status: number;
-  state?: CounterRenderState;
+  lang?: string;
+  redirect?: { location: string; status: number };
+  state?: RenderState;
   hydrationMode?: HydrationMode;
   stateKey?: string;
   statePayload?: string;
   islandsKey?: string;
   islandsPayloadJson?: string;
+  dataKey?: string;
+  dataPayload?: string;
 }
 
 interface SiteModule {
   site: {
-    render(url: string): Promise<RenderResult>;
+    render(url: string, request?: RouteRequest): Promise<RenderResult>;
   };
 }
 
-interface ManifestChunk {
-  file: string;
-  css?: string[];
-}
-
-type Manifest = Record<string, ManifestChunk>;
+/** Bodies larger than this are rejected with 413 rather than buffered. */
+const MAX_BODY_BYTES = 1_000_000;
 
 interface DevViteServer {
   middlewares: (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void;
@@ -54,75 +61,6 @@ export interface ConventionSiteServerOptions {
   clientDistDir?: string;
   serverDistDir?: string;
   streaming?: boolean;
-}
-
-function resolveHydrationMode(rendered: RenderResult): HydrationMode {
-  return rendered.hydrationMode ?? 'full';
-}
-
-function resolveStatePayload(rendered: RenderResult): string {
-  if (typeof rendered.statePayload === 'string') {
-    return rendered.statePayload;
-  }
-
-  if (rendered.state) {
-    return serializeState(rendered.state);
-  }
-
-  return 'null';
-}
-
-function resolveBootstrapScripts(rendered: RenderResult): string {
-  if (resolveHydrationMode(rendered) !== 'islands') {
-    return '';
-  }
-
-  const islandsKey = rendered.islandsKey ?? '__BH_ISLANDS__';
-  const islandsPayload = rendered.islandsPayloadJson ?? '[]';
-  return `<script>window[${JSON.stringify(islandsKey)}]=${islandsPayload}</script>`;
-}
-
-function applyTemplate(template: string, rendered: RenderResult, scripts: string, clientScript: string): string {
-  const stateAssignmentPattern = /window\.__SITE_STATE__\s*=\s*<!--app-state-->/;
-  const stateKey = rendered.stateKey;
-  const normalizedTemplate = stateKey && stateAssignmentPattern.test(template)
-    ? template.replace(stateAssignmentPattern, `window[${JSON.stringify(stateKey)}]=<!--app-state-->`)
-    : template;
-
-  return normalizedTemplate
-    .replace('<!--app-head-->', `${rendered.head}\n${scripts}`)
-    .replace('<!--app-html-->', rendered.html)
-    .replace('<!--app-state-->', resolveStatePayload(rendered))
-    .replace('<!--app-bootstrap-->', resolveBootstrapScripts(rendered))
-    .replace('<!--app-scripts-->', clientScript);
-}
-
-function resolveManifestEntryKey(manifest: Manifest, preferred: string): string | null {
-  if (manifest[preferred]) return preferred;
-
-  for (const key of Object.keys(manifest)) {
-    if (key.endsWith(preferred)) return key;
-  }
-
-  return null;
-}
-
-function createPreloadTags(manifest: Manifest, entry: string, includeScript = true): string {
-  const chunk = manifest[entry];
-  if (!chunk) return '';
-
-  const tags: string[] = [];
-
-  if (Array.isArray(chunk.css)) {
-    for (const cssFile of chunk.css) {
-      tags.push(`<link rel="stylesheet" href="/${cssFile}">`);
-    }
-  }
-
-  if (includeScript) {
-    tags.push(`<script type="module" src="/${chunk.file}"></script>`);
-  }
-  return tags.join('');
 }
 
 function contentTypeForPath(filePath: string): string {
@@ -150,6 +88,36 @@ function writeHtml(response: ServerResponse, status: number, body: string): void
   response.statusCode = status;
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   response.end(body);
+}
+
+function writeRedirect(response: ServerResponse, location: string, status: number): void {
+  response.statusCode = status;
+  response.setHeader('Location', location);
+  response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  response.end(`Redirecting to ${location}`);
+}
+
+async function readRequestBody(request: IncomingMessage): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+
+    request.on('data', (chunk: Buffer | string) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.byteLength;
+
+      if (size > MAX_BODY_BYTES) {
+        resolve(null);
+        request.destroy();
+        return;
+      }
+
+      chunks.push(buffer);
+    });
+
+    request.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    request.on('error', reject);
+  });
 }
 
 async function safeStaticPath(rootDir: string, requestPath: string): Promise<string | null> {
@@ -228,7 +196,7 @@ async function importVite(): Promise<ViteModule> {
 
 async function loadProd(options: Required<ConventionSiteServerOptions>): Promise<{
   template: string;
-  render: (url: string) => Promise<RenderResult>;
+  render: (url: string, routeRequest?: RouteRequest) => Promise<RenderResult>;
   manifest: Manifest;
   entry: string | null;
 }> {
@@ -248,7 +216,7 @@ async function loadProd(options: Required<ConventionSiteServerOptions>): Promise
 
   return {
     template,
-    render: (url: string) => serverModule.site.render(url),
+    render: (url: string, routeRequest?: RouteRequest) => serverModule.site.render(url, routeRequest),
     manifest,
     entry,
   };
@@ -286,7 +254,7 @@ export async function createConventionSiteHandler(options: ConventionSiteServerO
 
   let vite: DevViteServer | undefined;
   let template = '';
-  let render: ((url: string) => Promise<RenderResult>) | undefined;
+  let render: ((url: string, routeRequest?: RouteRequest) => Promise<RenderResult>) | undefined;
   let prodManifest: Manifest = {};
   let prodEntry: string | null = null;
   let clientDistRoot = '';
@@ -314,11 +282,28 @@ export async function createConventionSiteHandler(options: ConventionSiteServerO
     const parsedUrl = new URL(requestUrl, 'http://localhost');
     const url = `${parsedUrl.pathname}${parsedUrl.search}`;
 
-    if (method !== 'GET' && method !== 'HEAD') {
+    const isMutation = isMutationMethod(method);
+
+    if (method !== 'GET' && method !== 'HEAD' && !isMutation) {
       response.statusCode = 405;
-      response.setHeader('Allow', 'GET, HEAD');
+      response.setHeader('Allow', 'GET, HEAD, POST, PUT, PATCH, DELETE');
       response.end('Method Not Allowed');
       return;
+    }
+
+    let routeRequest: RouteRequest | undefined;
+
+    if (isMutation) {
+      const body = await readRequestBody(request);
+
+      if (body === null) {
+        response.statusCode = 413;
+        response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        response.end('Payload Too Large');
+        return;
+      }
+
+      routeRequest = createRouteRequest(method, request.headers, body);
     }
 
     try {
@@ -331,7 +316,13 @@ export async function createConventionSiteHandler(options: ConventionSiteServerO
         devTemplate = await vite.transformIndexHtml(url, devTemplate);
 
         const module = (await vite.ssrLoadModule(normalized.appModulePath)) as SiteModule;
-        const rendered = await module.site.render(url);
+        const rendered = await module.site.render(url, routeRequest);
+
+        if (rendered.redirect) {
+          writeRedirect(response, rendered.redirect.location, rendered.redirect.status);
+          return;
+        }
+
         const hydrationMode = resolveHydrationMode(rendered);
         const clientScript = hydrationMode === 'none'
           ? ''
@@ -362,7 +353,13 @@ export async function createConventionSiteHandler(options: ConventionSiteServerO
         if (served) return;
       }
 
-      const rendered = await render!(url);
+      const rendered = await render!(url, routeRequest);
+
+      if (rendered.redirect) {
+        writeRedirect(response, rendered.redirect.location, rendered.redirect.status);
+        return;
+      }
+
       const hydrationMode = resolveHydrationMode(rendered);
       const prodScripts = prodEntry
         ? createPreloadTags(prodManifest, prodEntry, hydrationMode !== 'none')

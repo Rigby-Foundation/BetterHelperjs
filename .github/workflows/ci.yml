@@ -14,14 +14,19 @@ jobs:
   test-and-build:
     runs-on: blacksmith-2vcpu-ubuntu-2404
 
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20', '22', '24']
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
@@ -39,6 +44,7 @@ jobs:
       - name: Test root
         run: npm run test
 
+      # Also enforces the gzip budgets in scripts/bundle-size.mjs.
       - name: Build root
         run: npm run build
 
@@ -47,3 +53,46 @@ jobs:
 
       - name: Build site
         run: npm --prefix site run build
+
+  # The scaffold is a published surface: verify a fresh project built from the
+  # packed tarball typechecks, builds and prerenders.
+  scaffold:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and pack
+        run: |
+          npm run build
+          npm pack --pack-destination /tmp
+
+      - name: Scaffold a project from the tarball
+        run: |
+          set -euo pipefail
+          TARBALL=$(ls /tmp/rigbyhost-karui-*.tgz)
+          mkdir -p /tmp/host && cd /tmp/host
+          npm init -y
+          npm install "$TARBALL"
+          node node_modules/.bin/karui create demo-app --no-install
+          cd demo-app
+          node -e "
+            const p = require('./package.json');
+            p.dependencies['@rigbyhost/karui'] = 'file:$TARBALL';
+            require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));
+          "
+          npm install
+          npm run check
+          npm run build
+          npx karui prerender --not-found /404

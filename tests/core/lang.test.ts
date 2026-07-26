@@ -6,9 +6,9 @@ import { LanguageService } from '../../src/core/lang.js';
 describe('LanguageService', () => {
   it('parses variables from packet', () => {
     const lang = new LanguageService(new HttpClient());
-    const parsed = lang.parse('{"title":"+APP+"}', { APP: 'BetterHelper' });
+    const parsed = lang.parse('{"title":"+APP+"}', { APP: 'Karui' });
 
-    expect(parsed).toBe('{"title":"BetterHelper"}');
+    expect(parsed).toBe('{"title":"Karui"}');
   });
 
 

@@ -1,6 +1,12 @@
-import { mount, renderToString } from '../jsx/index.js';
+import { hydrate, mount, renderToString } from '../jsx/index.js';
 import type { VNodeChild } from '../jsx/jsx-runtime.js';
-import { NotFoundError, type Router } from '../router/index.js';
+import {
+  NotFoundError,
+  RedirectError,
+  type RouteMeta,
+  type RouteRequest,
+  type Router,
+} from '../router/index.js';
 
 export interface ShellRenderProps<State> {
   state: State;
@@ -20,6 +26,8 @@ export interface RenderWithRouterOptions<State> {
   titlePrefix?: string;
   defaultTitle?: string;
   data?: unknown;
+  actionData?: unknown;
+  request?: RouteRequest;
   forceNotFound?: boolean;
   error?: unknown;
 }
@@ -29,6 +37,7 @@ export interface RenderWithRouterResult {
   status: number;
   title: string;
   routeTitle: string;
+  meta: RouteMeta;
   data: unknown;
   error?: unknown;
 }
@@ -42,6 +51,8 @@ function resolvePageTitle(routeTitle: string, titlePrefix?: string, defaultTitle
 export function renderWithRouter<State>(options: RenderWithRouterOptions<State>): RenderWithRouterResult {
   const route = options.router.render(options.url, options.state, {
     data: options.data,
+    actionData: options.actionData,
+    request: options.request,
     forceNotFound: options.forceNotFound,
     error: options.error,
   });
@@ -63,6 +74,7 @@ export function renderWithRouter<State>(options: RenderWithRouterOptions<State>)
     status: route.status,
     title,
     routeTitle,
+    meta: route.meta,
     data: route.data,
     error: route.error,
   };
@@ -84,6 +96,14 @@ export interface MountWithRouterOptions<State> {
   setUrl?: (state: State, url: string) => State;
   loadData?: (url: string, state: State) => unknown | Promise<unknown>;
   onError?: (error: unknown, context: { url: string; state: State }) => void;
+  /**
+   * Loader data the server already resolved. Supplying it lets the first client
+   * render reuse the server's data instead of refetching, which is what keeps
+   * the hydrated tree identical to the markup on the page.
+   */
+  initialData?: unknown;
+  /** Adopt the server-rendered DOM on the first render instead of replacing it. */
+  hydrate?: boolean;
 }
 
 export function mountWithRouter<State>(options: MountWithRouterOptions<State>): () => void {
@@ -95,9 +115,13 @@ export function mountWithRouter<State>(options: MountWithRouterOptions<State>): 
   const setUrl = options.setUrl ?? ((state: State, url: string) => ({ ...(state as Record<string, unknown>), url } as State));
 
   let state = { ...options.initialState };
-  let routeData: unknown;
-  let routeDataUrl: string | null = null;
+  let routeData: unknown = options.initialData;
+  let routeDataUrl: string | null = options.initialData === undefined ? null : getUrl(state);
   let renderToken = 0;
+
+  // `hydrate` falls through to a normal patch once the root is live, so the
+  // first render adopts server markup and every later one diffs.
+  const render = options.hydrate ? hydrate : mount;
 
   const rerender = (nextUrl?: string, forceDataLoad = false): void => {
     if (nextUrl) {
@@ -116,6 +140,13 @@ export function mountWithRouter<State>(options: MountWithRouterOptions<State>): 
           routeData = await options.loadData(url, state);
         } catch (error) {
           routeData = undefined;
+
+          // A loader redirect becomes a client navigation; the render that
+          // follows belongs to the destination, not this URL.
+          if (error instanceof RedirectError) {
+            options.router.navigate(error.location, { replace: error.status === 301 || error.status === 303 });
+            return;
+          }
 
           if (error instanceof NotFoundError) {
             forceNotFound = true;
@@ -153,7 +184,7 @@ export function mountWithRouter<State>(options: MountWithRouterOptions<State>): 
         rerender();
       };
 
-      mount(
+      render(
         options.root,
         options.shell({
           state,
@@ -183,7 +214,7 @@ export function mountWithRouter<State>(options: MountWithRouterOptions<State>): 
     rerender(url, true);
   });
 
-  rerender(getUrl(state), true);
+  rerender(getUrl(state), options.initialData === undefined);
 
   return () => {
     stop();

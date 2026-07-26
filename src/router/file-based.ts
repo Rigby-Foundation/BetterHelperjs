@@ -2,29 +2,36 @@ import type { VNodeChild } from '../jsx/jsx-runtime.js';
 import {
   createRouter,
   type CreateRouterOptions,
+  type RouteAction,
   type RouteComponent,
   type RouteContext,
   type RouteDefinition,
   type RouteErrorBoundary,
   type RouteLoader,
+  type RouteMeta,
+  type RouteStaticPaths,
   type Router,
 } from './index.js';
 
-export interface FileRouteMeta {
-  title?: string;
+export interface FileRouteMeta extends RouteMeta {
   errorTitle?: string;
 }
 
+/** A page's `meta` export: a fixed object, or one derived from route context. */
+export type FileRouteMetaInput<State = unknown> = FileRouteMeta | ((ctx: RouteContext<State>) => FileRouteMeta);
+
 export interface FileRouteModule<State = unknown> {
   default: RouteComponent<State>;
-  meta?: FileRouteMeta;
+  meta?: FileRouteMetaInput<State>;
   loader?: RouteLoader<State>;
+  action?: RouteAction<State>;
+  staticPaths?: RouteStaticPaths;
   errorBoundary?: RouteErrorBoundary<State>;
 }
 
 export interface FileErrorModule<State = unknown> {
   default: RouteErrorBoundary<State>;
-  meta?: FileRouteMeta;
+  meta?: FileRouteMetaInput<State>;
 }
 
 export interface FileLayoutProps<State = unknown> {
@@ -197,6 +204,26 @@ function composeErrorBoundaryWithLayouts<State>(
   };
 }
 
+/** The metadata available without a route context, for title resolution. */
+function staticMetaOf<State>(meta: FileRouteMetaInput<State> | undefined): FileRouteMeta | undefined {
+  return typeof meta === 'function' ? undefined : meta;
+}
+
+/** Keep the path-derived title as the fallback when a page sets no title. */
+function withFallbackTitle<State>(
+  meta: FileRouteMetaInput<State> | undefined,
+  fallbackTitle: string
+): FileRouteMetaInput<State> {
+  if (typeof meta === 'function') {
+    return (ctx) => {
+      const resolved = meta(ctx);
+      return resolved.title === undefined ? { ...resolved, title: fallbackTitle } : resolved;
+    };
+  }
+
+  return { ...meta, title: meta?.title ?? fallbackTitle };
+}
+
 function resolveFirstExistingFile<State>(
   pages: Record<string, FileSystemModule<State>>,
   candidates: string[]
@@ -237,12 +264,16 @@ export function createFileRoutes<State = unknown>(
 
       const path = filePathToRoutePath(file, pagesRoot);
       const layouts = resolveLayoutChain(pages, file, pagesRoot);
+      const fallbackTitle = titleResolver(path);
 
       return {
         path,
-        title: mod.meta?.title ?? titleResolver(path),
+        title: staticMetaOf(mod.meta)?.title ?? fallbackTitle,
+        meta: withFallbackTitle(mod.meta, fallbackTitle),
         component: composeWithLayouts(mod.default, layouts),
         loader: mod.loader,
+        action: mod.action,
+        staticPaths: mod.staticPaths,
         errorBoundary: mod.errorBoundary
           ? composeErrorBoundaryWithLayouts(mod.errorBoundary, layouts)
           : undefined,
@@ -263,12 +294,17 @@ export function createFileRoutes<State = unknown>(
     errorBoundary = composeErrorBoundaryWithLayouts(errorModule.default, layouts);
   }
 
+  // The 404 and error pages render outside a matched route, so only their
+  // context-free metadata is available here.
+  const notFoundMeta = staticMetaOf(notFoundModule?.meta);
+  const errorMeta = staticMetaOf(errorModule?.meta);
+
   return {
     routes,
     notFound,
-    notFoundTitle: notFoundModule?.meta?.title ?? options.notFoundTitle ?? '404',
+    notFoundTitle: notFoundMeta?.title ?? options.notFoundTitle ?? '404',
     errorBoundary,
-    errorTitle: errorModule?.meta?.errorTitle ?? errorModule?.meta?.title ?? options.errorTitle ?? 'Error',
+    errorTitle: errorMeta?.errorTitle ?? errorMeta?.title ?? options.errorTitle ?? 'Error',
   };
 }
 

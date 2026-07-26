@@ -1,4 +1,4 @@
-import type { CounterSiteRouteContext } from '@rigbyhost/karui/ssr';
+import type { SiteRouteContext } from '@rigbyhost/karui/ssr';
 
 export const meta = {
   title: 'About',
@@ -9,14 +9,14 @@ interface AboutLoaderData {
   runtime: string;
 }
 
-export function loader(ctx: CounterSiteRouteContext): AboutLoaderData {
+export function loader(ctx: SiteRouteContext): AboutLoaderData {
   return {
     loadedAt: new Date().toISOString(),
     runtime: ctx.state.runtime,
   };
 }
 
-export default function AboutPage(ctx: CounterSiteRouteContext) {
+export default function AboutPage(ctx: SiteRouteContext) {
   const data = (ctx.data ?? null) as AboutLoaderData | null;
 
   return (

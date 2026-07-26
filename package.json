@@ -1,6 +1,6 @@
 {
   "name": "@rigbyhost/karui",
-  "version": "4.0.1",
+  "version": "5.0.0",
   "description": "Full-stack TypeScript framework with JSX runtime, file-based routing, and SSR for Node/Bun/Deno.",
   "author": "Rigby Foundation",
   "repository": {
@@ -8,6 +8,11 @@
     "url": "https://github.com/Rigby-Foundation/Karui"
   },
   "type": "module",
+  "sideEffects": [
+    "./dist/legacy/index.js",
+    "./dist/ssr/site-server.js",
+    "./dist/cli.js"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,6 +28,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./legacy": {
+      "types": "./dist/legacy/index.d.ts",
+      "import": "./dist/legacy/index.js"
     },
     "./browser": {
       "types": "./dist/browser/index.d.ts",
@@ -59,6 +68,10 @@
     "./ssr/site-server": {
       "types": "./dist/ssr/site-server.d.ts",
       "import": "./dist/ssr/site-server.js"
+    },
+    "./ssr/prerender": {
+      "types": "./dist/ssr/prerender.d.ts",
+      "import": "./dist/ssr/prerender.js"
     }
   },
   "scripts": {
@@ -71,9 +84,6 @@
     "dev:site": "npm --prefix site run dev",
     "build:site": "npm --prefix site run build",
     "start:site": "npm --prefix site run start",
-    "dev:api": "tsx src/server/index.ts",
-    "dev:api-full": "concurrently -k -n api,site -c cyan,green \"npm:dev:api\" \"npm:dev\"",
-    "start:api": "node dist/server/index.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "check": "tsc -p tsconfig.json --noEmit",

@@ -1,10 +1,10 @@
-import type { CounterSiteErrorContext } from '@rigbyhost/karui/ssr';
+import type { SiteErrorContext } from '@rigbyhost/karui/ssr';
 
 export const meta = {
   title: 'Error',
 };
 
-export default function ErrorPage(ctx: CounterSiteErrorContext) {
+export default function ErrorPage(ctx: SiteErrorContext) {
   const message = ctx.error instanceof Error ? ctx.error.message : String(ctx.error);
 
   return (

@@ -1,5 +1,6 @@
-import type { CounterSiteLayoutProps } from '@rigbyhost/karui/ssr';
+import { useState } from '@rigbyhost/karui/jsx';
 import { Link } from '@rigbyhost/karui/router';
+import type { SiteLayoutProps } from '@rigbyhost/karui/ssr';
 
 const shellStyle = [
   'max-width:960px',
@@ -8,11 +9,22 @@ const shellStyle = [
   'font-family:ui-sans-serif,system-ui,sans-serif',
 ].join(';');
 
-export default function Layout({ state, status, title, children, setState }: CounterSiteLayoutProps) {
+function Counter() {
+  // Local component state — no need to thread a counter through site state.
+  const [count, setCount] = useState(0);
+
+  return (
+    <button id="inc-btn" style="padding:8px 12px;cursor:pointer;" onClick={() => setCount(count + 1)}>
+      Count: <span id="count-value">{count}</span>
+    </button>
+  );
+}
+
+export default function Layout({ state, status, title, children }: SiteLayoutProps) {
   return (
     <main style={shellStyle}>
       <header style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
-        <h1 style="margin:0;">BetterHelper Test Site</h1>
+        <h1 style="margin:0;">Karui Test Site</h1>
         <span style="padding:2px 8px;border:1px solid #cfd9e8;border-radius:999px;font-size:12px;">HTTP {status}</span>
       </header>
 
@@ -20,6 +32,7 @@ export default function Layout({ state, status, title, children, setState }: Cou
         <Link href="/">home</Link>
         <Link href="/about">about</Link>
         <Link href="/docs/intro?tab=overview">docs</Link>
+        <Link href="/contact">contact</Link>
       </nav>
 
       <p style="margin:0 0 6px;">Page title: <strong>{title}</strong></p>
@@ -27,13 +40,7 @@ export default function Layout({ state, status, title, children, setState }: Cou
       <p style="margin:0 0 6px;">Runtime: <code>{state.runtime}</code></p>
       <p style="margin:0 0 10px;">Rendered at: <code>{state.generatedAt}</code></p>
 
-      <button
-        id="inc-btn"
-        style="padding:8px 12px;cursor:pointer;"
-        onClick={() => setState((current) => ({ ...current, count: current.count + 1 }))}
-      >
-        Count: <span id="count-value">{state.count}</span>
-      </button>
+      <Counter />
 
       <section style="margin-top:14px;">{children}</section>
     </main>

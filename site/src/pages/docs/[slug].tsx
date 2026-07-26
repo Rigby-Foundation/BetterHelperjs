@@ -1,9 +1,15 @@
-import type { CounterSiteRouteContext } from '@rigbyhost/karui/ssr';
+import type { SiteRouteContext } from '@rigbyhost/karui/ssr';
 import { Link } from '@rigbyhost/karui/router';
 
-export const meta = {
-  title: 'Docs',
-};
+export const meta = (ctx: SiteRouteContext) => ({
+  title: `Docs: ${(ctx.data as DocsLoaderData | null)?.slug ?? 'unknown'}`,
+  description: 'Per-page metadata built from loader data.',
+});
+
+// Parameter sets the prerenderer should emit static HTML for.
+export function staticPaths() {
+  return [{ slug: 'intro' }, { slug: 'routing' }];
+}
 
 interface DocsLoaderData {
   slug: string;
@@ -11,7 +17,7 @@ interface DocsLoaderData {
   loadedAt: string;
 }
 
-export function loader(ctx: CounterSiteRouteContext): DocsLoaderData {
+export function loader(ctx: SiteRouteContext): DocsLoaderData {
   return {
     slug: ctx.params.slug ?? 'unknown',
     tab: ctx.searchParams.get('tab') ?? 'overview',
@@ -19,7 +25,7 @@ export function loader(ctx: CounterSiteRouteContext): DocsLoaderData {
   };
 }
 
-export default function DocsPage(ctx: CounterSiteRouteContext) {
+export default function DocsPage(ctx: SiteRouteContext) {
   const data = (ctx.data ?? null) as DocsLoaderData | null;
   const slug = data?.slug ?? ctx.params.slug ?? 'unknown';
   const tab = data?.tab ?? ctx.searchParams.get('tab') ?? 'overview';

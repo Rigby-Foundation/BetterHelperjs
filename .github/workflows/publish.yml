@@ -23,6 +23,20 @@ jobs:
           package-manager-cache: false
       
       - run: npm ci
-      - run: npm run build --if-present
+      - run: npm run check
       - run: npm test
+      # Runs tsc + vite and enforces the gzip budgets.
+      - run: npm run build
+
+      # A tag that disagrees with package.json publishes the wrong version.
+      - name: Verify tag matches package.json
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG" >&2
+            exit 1
+          fi
+
       - run: npm publish --provenance --access public

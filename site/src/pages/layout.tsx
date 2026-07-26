@@ -1,5 +1,5 @@
 import type { FileLayoutProps } from '@rigbyhost/karui/router/file-based';
-import type { CounterSiteState } from '@rigbyhost/karui/ssr';
+import type { RenderState } from '@rigbyhost/karui/ssr';
 
 const sectionStyle = [
   'margin-top:12px',
@@ -9,7 +9,7 @@ const sectionStyle = [
   'background:#f8fbff',
 ].join(';');
 
-export default function PagesLayout({ children, ctx }: FileLayoutProps<CounterSiteState>) {
+export default function PagesLayout({ children, ctx }: FileLayoutProps<RenderState>) {
   return (
     <section style={sectionStyle}>
       <p style="margin:0 0 10px;font-size:12px;color:#476078;">

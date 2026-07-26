@@ -1,5 +1,5 @@
 import { serializeState } from '../core/state.js';
-import { mount } from '../jsx/index.js';
+import { hydrate } from '../jsx/index.js';
 import { jsx, type VNodeChild } from '../jsx/jsx-runtime.js';
 
 export interface IslandPayloadEntry {
@@ -28,7 +28,7 @@ export interface HydrateIslandsOptions {
 
 type IslandComponent<Props extends Record<string, unknown>> = (props: Props) => VNodeChild;
 
-const DEFAULT_ISLANDS_KEY = '__BH_ISLANDS__';
+const DEFAULT_ISLANDS_KEY = '__KARUI_ISLANDS__';
 const islandRegistry = new Map<string, IslandComponent<Record<string, unknown>>>();
 
 let islandKeyCounter = 0;
@@ -96,8 +96,8 @@ export function defineIsland<Props extends Record<string, unknown>>(
     const tag = options.wrapperTag ?? 'div';
     const wrapperProps: Record<string, unknown> = {
       ...(options.wrapperProps ?? {}),
-      'data-bh-island': String(id),
-      'data-bh-island-key': key,
+      'data-karui-island': String(id),
+      'data-karui-island-key': key,
       children: jsx(normalizedComponent, props as Record<string, unknown>),
     };
 
@@ -116,7 +116,7 @@ export function hydrateIslands(options: HydrateIslandsOptions = {}): () => void 
   const payload = options.payload ?? (Array.isArray(payloadFromWindow) ? payloadFromWindow as IslandPayloadEntry[] : []);
 
   for (const entry of payload) {
-    const target = root.querySelector?.(`[data-bh-island="${String(entry.id)}"]`);
+    const target = root.querySelector?.(`[data-karui-island="${String(entry.id)}"]`);
     if (!(target instanceof Element)) {
       continue;
     }
@@ -128,7 +128,9 @@ export function hydrateIslands(options: HydrateIslandsOptions = {}): () => void 
     }
 
     try {
-      mount(target, jsx(component, entry.props));
+      // Adopt the island's server markup rather than re-rendering it — the
+      // whole point of islands is that static output is not thrown away.
+      hydrate(target, jsx(component, entry.props));
     } catch (error) {
       options.onError?.(error, entry);
     }

@@ -1,4 +1,5 @@
 import { jsx, type VNodeChild } from '../jsx/jsx-runtime.js';
+import type { RouteRequest } from './request.js';
 
 export type RouteParams = Record<string, string>;
 
@@ -9,20 +10,57 @@ export interface RouteContext<State = unknown> {
   params: RouteParams;
   state: State;
   data: unknown;
+  /** Result returned by this route's `action`, when one just ran. */
+  actionData?: unknown;
+  /** Present on server renders; absent during client navigation. */
+  request?: RouteRequest;
 }
+
+/** Document metadata for a route. Values are emitted into `<head>`. */
+export interface RouteMeta {
+  title?: string;
+  description?: string;
+  canonical?: string;
+  robots?: string;
+  /** Sets the `lang` attribute on `<html>`. */
+  lang?: string;
+  /** Open Graph properties, without the `og:` prefix. */
+  og?: Record<string, string | number | undefined>;
+  /** Twitter card properties, without the `twitter:` prefix. */
+  twitter?: Record<string, string | number | undefined>;
+  /** Arbitrary `<meta>` tags: each record becomes one tag's attributes. */
+  meta?: Array<Record<string, string | number | boolean | undefined>>;
+  /** Arbitrary `<link>` tags: each record becomes one tag's attributes. */
+  link?: Array<Record<string, string | number | boolean | undefined>>;
+}
+
+/** Route metadata, either fixed or derived from the resolved route context. */
+export type RouteMetaInput<State = unknown> = RouteMeta | ((ctx: RouteContext<State>) => RouteMeta);
 
 export type RouteComponent<State = unknown> = (ctx: RouteContext<State>) => VNodeChild;
 export type RouteLoader<State = unknown> = (ctx: RouteContext<State>) => unknown | Promise<unknown>;
+export type RouteAction<State = unknown> = (ctx: RouteActionContext<State>) => unknown | Promise<unknown>;
+
+export interface RouteActionContext<State = unknown> extends RouteContext<State> {
+  request: RouteRequest;
+}
+
 export interface RouteErrorContext<State = unknown> extends RouteContext<State> {
   error: unknown;
 }
 export type RouteErrorBoundary<State = unknown> = (ctx: RouteErrorContext<State>) => VNodeChild;
 
+/** Parameter sets to prerender for a dynamic route. */
+export type RouteStaticPaths = () => RouteParams[] | Promise<RouteParams[]>;
+
 export interface RouteDefinition<State = unknown> {
   path: string;
   component: RouteComponent<State>;
   title?: string;
+  meta?: RouteMetaInput<State>;
   loader?: RouteLoader<State>;
+  action?: RouteAction<State>;
+  staticPaths?: RouteStaticPaths;
   errorBoundary?: RouteErrorBoundary<State>;
 }
 
@@ -36,6 +74,7 @@ export interface MatchedRoute<State = unknown> {
 export interface RouteRenderResult<State = unknown> {
   status: number;
   title: string;
+  meta: RouteMeta;
   matched: MatchedRoute<State> | null;
   context: RouteContext<State>;
   node: VNodeChild;
@@ -56,10 +95,22 @@ interface CompiledRoute<State> {
   params: string[];
 }
 
+/** Outcome of running a route's `action`. */
+export interface RouteActionOutcome {
+  status: number;
+  data?: unknown;
+  redirect?: { location: string; status: number };
+  notFound?: boolean;
+  error?: unknown;
+  /** No route matched, or the matched route exports no `action`. */
+  unsupported?: boolean;
+}
+
 export interface Router<State = unknown> {
   readonly routes: RouteDefinition<State>[];
   resolve(input: string | URL): MatchedRoute<State> | null;
   render(input: string | URL, state: State, options?: RouteRenderOptions): RouteRenderResult<State>;
+  runAction(input: string | URL, state: State, request: RouteRequest): Promise<RouteActionOutcome>;
   build(path: string, params?: RouteParams, query?: Record<string, string | number | boolean | undefined>): string;
   navigate(to: string, options?: { replace?: boolean }): void;
   start(listener: (url: string) => void): () => void;
@@ -67,6 +118,8 @@ export interface Router<State = unknown> {
 
 export interface RouteRenderOptions {
   data?: unknown;
+  actionData?: unknown;
+  request?: RouteRequest;
   forceNotFound?: boolean;
   error?: unknown;
 }
@@ -84,6 +137,33 @@ export function notFound(message?: string): never {
   throw new NotFoundError(message);
 }
 
+/**
+ * Thrown by `redirect()`. Loaders and actions raise it the same way they raise
+ * `NotFoundError`; the server turns it into a `Location` header and the client
+ * turns it into a navigation.
+ */
+export class RedirectError extends Error {
+  public readonly location: string;
+  public readonly status: number;
+
+  constructor(location: string, status = 302) {
+    super(`Redirect to ${location}`);
+    this.name = 'RedirectError';
+    this.location = location;
+    this.status = status;
+  }
+}
+
+/**
+ * Stop rendering and send the visitor somewhere else.
+ *
+ * Use 303 after a successful mutation so a browser reload does not resubmit
+ * the form — that is the default when redirecting out of an `action`.
+ */
+export function redirect(location: string, status = 302): never {
+  throw new RedirectError(location, status);
+}
+
 export interface LinkProps {
   href?: string;
   to?: string;
@@ -94,6 +174,19 @@ export interface LinkProps {
 
 function escapePattern(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function resolveRouteMeta<State>(route: RouteDefinition<State>, context: RouteContext<State>): RouteMeta {
+  const resolved = typeof route.meta === 'function' ? route.meta(context) : route.meta;
+  const meta: RouteMeta = { ...resolved };
+
+  // `title` on the route definition stays the fallback so existing routes and
+  // the file-based title resolver keep working unchanged.
+  if (meta.title === undefined && route.title !== undefined) {
+    meta.title = route.title;
+  }
+
+  return meta;
 }
 
 function compilePath(path: string): { regex: RegExp; params: string[] } {
@@ -203,11 +296,14 @@ export function createRouter<State = unknown>(
       params: matched?.params ?? {},
       state,
       data: renderOptions.data,
+      actionData: renderOptions.actionData,
+      request: renderOptions.request,
     };
 
     const renderNotFound = (): RouteRenderResult<State> => ({
       status: 404,
       title: options.notFoundTitle ?? 'Not Found',
+      meta: { title: options.notFoundTitle ?? 'Not Found', robots: 'noindex' },
       matched: null,
       context,
       node: options.notFound ? options.notFound(context) : null,
@@ -215,6 +311,11 @@ export function createRouter<State = unknown>(
     });
 
     const renderError = (error: unknown, routeMatch: MatchedRoute<State> | null): RouteRenderResult<State> => {
+      // Redirects are control flow, not failures: never swallow them here.
+      if (error instanceof RedirectError) {
+        throw error;
+      }
+
       if (error instanceof NotFoundError) {
         return renderNotFound();
       }
@@ -227,6 +328,7 @@ export function createRouter<State = unknown>(
       return {
         status: 500,
         title: options.errorTitle ?? 'Error',
+        meta: { title: options.errorTitle ?? 'Error', robots: 'noindex' },
         matched: routeMatch,
         context,
         node: boundary({
@@ -248,9 +350,12 @@ export function createRouter<State = unknown>(
 
     if (matched) {
       try {
+        const meta = resolveRouteMeta(matched.route, context);
+
         return {
           status: 200,
-          title: matched.route.title ?? '',
+          title: meta.title ?? matched.route.title ?? '',
+          meta,
           matched,
           context,
           node: matched.route.component(context),
@@ -262,6 +367,47 @@ export function createRouter<State = unknown>(
     }
 
     return renderNotFound();
+  }
+
+  async function runAction(
+    input: string | URL,
+    state: State,
+    request: RouteRequest
+  ): Promise<RouteActionOutcome> {
+    const url = normalizeUrl(input);
+    const matched = resolve(url);
+    const action = matched?.route.action;
+
+    if (!matched || !action) {
+      return { status: 405, unsupported: true };
+    }
+
+    const context: RouteActionContext<State> = {
+      url,
+      pathname: url.pathname,
+      searchParams: url.searchParams,
+      params: matched.params,
+      state,
+      data: undefined,
+      request,
+    };
+
+    try {
+      return { status: 200, data: await action(context) };
+    } catch (error) {
+      if (error instanceof RedirectError) {
+        return {
+          status: error.status,
+          redirect: { location: error.location, status: error.status },
+        };
+      }
+
+      if (error instanceof NotFoundError) {
+        return { status: 404, notFound: true };
+      }
+
+      return { status: 500, error };
+    }
   }
 
   function notify(nextUrl: string): void {
@@ -359,6 +505,7 @@ export function createRouter<State = unknown>(
     routes,
     resolve,
     render,
+    runAction,
     build,
     navigate,
     start,
@@ -381,3 +528,5 @@ export function Link(props: LinkProps): VNodeChild {
 
   return jsx<Record<string, unknown>>('a', linkProps);
 }
+
+export * from './request.js';
