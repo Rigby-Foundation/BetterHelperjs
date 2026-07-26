@@ -51,7 +51,7 @@ export interface HelperFramework {
 }
 
 /** Kept in step with package.json by tests/legacy/version.test.ts. */
-export const VERSION = '5.0.0';
+export const VERSION = '5.0.1';
 
 export function createHelper(options: CreateHelperOptions = {}): HelperFramework {
   const http = new HttpClient();

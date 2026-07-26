@@ -5,6 +5,15 @@ All notable changes to Karui are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Karui adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.1] — 2026-07-26
+
+### Fixed
+
+- Added `"./package.json"` to the exports map. Build tooling routinely reads a
+  dependency's version, and there was no way to: the subpath was not exported,
+  and the package is ESM-only so `require.resolve` could not reach the entry
+  either. The target is a plain string, so it resolves under every condition.
+
 ## [5.0.0] — 2026-07-26
 
 The rendering core was rebuilt and the framework grew the server half it was
